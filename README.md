@@ -334,7 +334,7 @@ MIT License - IIT Jodhpur Academic Project 2026
 ## 📧 Contact
 
 For questions or support, reach out to the team:
-- Raghav: maheshwari.22@iitj.ac.in
-- Anmol: mishra.14@iitj.ac.in
-- Anhad: singh.97@iitj.ac.in
-- Vijna: maradithaya.8@iitj.ac.in
+- Raghav: b24cs1107@iitj.ac.in
+- Anmol: b24cs1009@iitj.ac.in
+- Anhad: b24cs1007@iitj.ac.in
+- Vijna: b24cs1109@iitj.ac.in
