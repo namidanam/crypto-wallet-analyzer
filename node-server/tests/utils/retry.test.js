@@ -8,14 +8,14 @@ describe('Retry Utility', () => {
     const fn = jest.fn(() => {
       if (count++ < 2) {
         const err = new Error('fail');
-        err.code = 'ECONNRESET'; // 👈 make it retriable
+        err.code = 'ECONNRESET'; 
         throw err;
       }
       return 'success';
     });
 
     const result = await retryWithBackoff(fn, 3, {
-      initialDelayMs: 0 // 👈 avoid waiting during tests
+      initialDelayMs: 0 
     });
 
     expect(result).toBe('success');
