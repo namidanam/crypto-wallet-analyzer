@@ -13,7 +13,7 @@ const WalletSchema = new Schema({
   },
   syncStatus: {
     type: String,
-    enum: ['PENDING', 'SYNCING', 'SYNCED', 'HISTORICAL_DONE'],
+    enum: ['PENDING', 'SYNCING', 'SYNCED', 'HISTORICAL_DONE', 'FAILED'],
     default: 'PENDING'
   },
   lastGoldrushBlock: {

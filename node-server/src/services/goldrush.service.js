@@ -2,7 +2,28 @@ import axios from 'axios';
 import { rateLimit } from '../utils/rateLimiter.js';
 import https from 'https';
 
+// Chain identifier mapping for Covalent API
+// NOTE: Covalent/GoldRush only supports EVM chains, NOT Bitcoin
+const CHAIN_MAPPING = {
+  'ethereum-mainnet': 'eth-mainnet',
+  'eth-mainnet': 'eth-mainnet',
+  'polygon-mainnet': 'matic-mainnet',
+  'matic-mainnet': 'matic-mainnet',
+  'bsc-mainnet': 'bsc-mainnet',
+  'binance-mainnet': 'bsc-mainnet'
+};
+
+const SUPPORTED_CHAINS = Object.keys(CHAIN_MAPPING);
+
 async function fetchGoldrushTxs(address, chain, cursor) {
+
+  // Validate chain is supported
+  if (!CHAIN_MAPPING[chain] && !chain.includes('eth') && !chain.includes('matic') && !chain.includes('bsc')) {
+    throw new Error(`Chain ${chain} is not supported by GoldRush. Supported chains: ${SUPPORTED_CHAINS.join(', ')}`);
+  }
+
+  // Map the chain to correct Covalent format
+  const mappedChain = CHAIN_MAPPING[chain] || chain;
 
   await rateLimit();
 
@@ -31,7 +52,7 @@ async function fetchGoldrushTxs(address, chain, cursor) {
     if (cursor) params.cursor = cursor;
 
     const response = await axios.get(
-      `https://api.covalenthq.com/v1/${chain}/address/${address}/transactions_v2/`,
+      `https://api.covalenthq.com/v1/${mappedChain}/address/${address}/transactions_v2/`,
       {
         params: {
           key: apiKey,
