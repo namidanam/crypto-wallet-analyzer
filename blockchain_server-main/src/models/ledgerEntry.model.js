@@ -21,7 +21,7 @@ const LedgerEntrySchema = new Schema({
 
   source: {
     type: String,
-    enum: ['goldrush', 'tatum'],
+    enum: ['goldrush', 'tatum', 'covalent'],
     required: true
   }
 }, { strict: true });
