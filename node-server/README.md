@@ -4,6 +4,8 @@ This is a Node.js/Express server that registers wallets and synchronizes their o
 - **Covalent/Goldrush** (priority) for EVM chains (Ethereum, Polygon, BSC, etc.)
 - **Tatum** (fallback) for non-EVM chains (Bitcoin, Dogecoin, Litecoin)
 
+For EVM chains, the sync also inspects transaction receipt logs and extracts **ERC20/BEP20 `Transfer` events** (e.g. USDT on BSC), so token transfers are not missed when the native transaction value is `0`.
+
 ### Tech Stack
 
 - **Runtime**: Node.js (ES modules)

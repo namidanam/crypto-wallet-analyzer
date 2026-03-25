@@ -4,6 +4,7 @@ import { fetchGoldrushTxs } from './goldrush.service.js';
 import { fetchTatumTxs } from './tatum.service.js';
 import { retryWithBackoff } from '../utils/retry.js';
 import { logInfo, logError } from '../utils/logger.js';
+import { formatUnits } from '../utils/units.js';
 
 // EVM chains - use Goldrush (Covalent)
 const EVM_CHAINS = ['ethereum-mainnet', 'eth-mainnet', 'polygon-mainnet', 'matic-mainnet', 'bsc-mainnet', 'binance-mainnet'];
@@ -32,7 +33,7 @@ async function insertEntries(entries) {
   const ops = valid.map(doc => ({
     updateOne: {
       filter: { wallet: doc.wallet, chain: doc.chain, txHash: doc.txHash },
-      update: { $setOnInsert: doc },
+      update: { $set: doc },
       upsert: true
     }
   }));
@@ -86,6 +87,27 @@ async function startHistoricalSync(wallet) {
 
           const entries = txs
             .map(tx => ({
+              ...(() => {
+                const valueRaw = String(tx?.value ?? '0');
+                const tokenDecimals = Number.isFinite(Number(tx?.tokenDecimals)) ? Number(tx.tokenDecimals) : null;
+                const isPrimaryErc20 = tx?.assetType === 'ERC20' && tokenDecimals !== null;
+                const amountRaw = isPrimaryErc20 ? valueRaw : undefined;
+                const amount = isPrimaryErc20 ? formatUnits(valueRaw, tokenDecimals) : valueRaw;
+
+                const tokenTransfers = Array.isArray(tx?.tokenTransfers)
+                  ? tx.tokenTransfers.map(t => {
+                    const raw = String(t?.amount ?? '0');
+                    const dec = Number.isFinite(Number(t?.tokenDecimals)) ? Number(t.tokenDecimals) : null;
+                    return {
+                      ...t,
+                      amountRaw: raw,
+                      amount: dec !== null ? formatUnits(raw, dec) : raw
+                    };
+                  })
+                  : undefined;
+
+                return { amount, amountRaw, tokenTransfers };
+              })(),
               wallet: wallet.address,
               chain: wallet.chain,
               txHash: tx.txHash ? String(tx.txHash) : '',
@@ -93,7 +115,10 @@ async function startHistoricalSync(wallet) {
               timestamp: Number.isFinite(Number(tx.timestamp)) ? Number(tx.timestamp) : Date.now(),
               from: tx.from,
               to: tx.to,
-              amount: tx.value,
+              nativeValue: tx.nativeValue,
+              tokenAddress: tx.tokenAddress,
+              tokenSymbol: tx.tokenSymbol,
+              tokenDecimals: tx.tokenDecimals,
               assetType: tx.assetType || 'NATIVE',
               source: 'goldrush'
             }));
@@ -140,6 +165,27 @@ async function startHistoricalSync(wallet) {
 
           const entries = txs
             .map(tx => ({
+              ...(() => {
+                const valueRaw = String(tx?.value ?? '0');
+                const tokenDecimals = Number.isFinite(Number(tx?.tokenDecimals)) ? Number(tx.tokenDecimals) : null;
+                const isPrimaryErc20 = tx?.assetType === 'ERC20' && tokenDecimals !== null;
+                const amountRaw = isPrimaryErc20 ? valueRaw : undefined;
+                const amount = isPrimaryErc20 ? formatUnits(valueRaw, tokenDecimals) : valueRaw;
+
+                const tokenTransfers = Array.isArray(tx?.tokenTransfers)
+                  ? tx.tokenTransfers.map(t => {
+                    const raw = String(t?.amount ?? '0');
+                    const dec = Number.isFinite(Number(t?.tokenDecimals)) ? Number(t.tokenDecimals) : null;
+                    return {
+                      ...t,
+                      amountRaw: raw,
+                      amount: dec !== null ? formatUnits(raw, dec) : raw
+                    };
+                  })
+                  : undefined;
+
+                return { amount, amountRaw, tokenTransfers };
+              })(),
               wallet: wallet.address,
               chain: wallet.chain,
               txHash: tx.txHash ? String(tx.txHash) : '',
@@ -147,7 +193,10 @@ async function startHistoricalSync(wallet) {
               timestamp: Number.isFinite(Number(tx.timestamp)) ? Number(tx.timestamp) : Date.now(),
               from: tx.from,
               to: tx.to,
-              amount: tx.value,
+              nativeValue: tx.nativeValue,
+              tokenAddress: tx.tokenAddress,
+              tokenSymbol: tx.tokenSymbol,
+              tokenDecimals: tx.tokenDecimals,
               assetType: tx.assetType || 'NATIVE',
               source: 'tatum'
             }));

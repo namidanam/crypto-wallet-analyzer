@@ -2,6 +2,8 @@ import axios from 'axios';
 import { rateLimit } from '../utils/rateLimiter.js';
 import https from 'https';
 
+const ERC20_TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
+
 // Chain identifier mapping for Covalent API
 // NOTE: Covalent/GoldRush only supports EVM chains, NOT Bitcoin
 const CHAIN_MAPPING = {
@@ -14,6 +16,114 @@ const CHAIN_MAPPING = {
 };
 
 const SUPPORTED_CHAINS = Object.keys(CHAIN_MAPPING);
+
+function normalizeAddress(addr) {
+  if (!addr || typeof addr !== 'string') return null;
+  return addr.trim().toLowerCase();
+}
+
+function safeBigIntString(value) {
+  if (value === null || value === undefined) return '0';
+  if (typeof value === 'bigint') return value.toString(10);
+  if (typeof value === 'number') return Number.isFinite(value) ? BigInt(Math.trunc(value)).toString(10) : '0';
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return '0';
+    // Covalent tends to return base-10 strings; fall back to hex if needed.
+    try {
+      if (trimmed.startsWith('0x') || trimmed.startsWith('0X')) return BigInt(trimmed).toString(10);
+      if (/^\d+$/.test(trimmed)) return BigInt(trimmed).toString(10);
+    } catch {
+      return '0';
+    }
+  }
+  return '0';
+}
+
+function tryDecodeTransferFromDecoded(decoded) {
+  const params = decoded?.params;
+  if (!decoded || decoded?.name !== 'Transfer' || !Array.isArray(params)) return null;
+
+  const getParam = (names) => {
+    for (const name of names) {
+      const match = params.find(p => normalizeAddress(p?.name) === normalizeAddress(name) || p?.name === name);
+      if (match?.value !== undefined) return match.value;
+    }
+    return undefined;
+  };
+
+  const from = getParam(['from', '_from', 'src', 'sender']);
+  const to = getParam(['to', '_to', 'dst', 'recipient']);
+  const value = getParam(['value', '_value', 'wad', 'amount']);
+
+  if (!from || !to || value === undefined) return null;
+  return {
+    from: String(from),
+    to: String(to),
+    amount: safeBigIntString(value)
+  };
+}
+
+function tryDecodeTransferFromRawLog(logEvent) {
+  const topics = logEvent?.raw_log_topics;
+  const data = logEvent?.raw_log_data;
+  if (!Array.isArray(topics) || topics.length < 3 || typeof data !== 'string') return null;
+
+  if (String(topics[0]).toLowerCase() !== ERC20_TRANSFER_TOPIC) return null;
+
+  const decodeTopicAddress = (topic) => {
+    if (!topic || typeof topic !== 'string') return null;
+    const hex = topic.toLowerCase().startsWith('0x') ? topic.slice(2) : topic;
+    if (hex.length < 40) return null;
+    return `0x${hex.slice(-40)}`;
+  };
+
+  const from = decodeTopicAddress(topics[1]);
+  const to = decodeTopicAddress(topics[2]);
+  if (!from || !to) return null;
+
+  return {
+    from,
+    to,
+    amount: safeBigIntString(data)
+  };
+}
+
+function extractTokenTransfers(logEvents, walletAddress) {
+  if (!Array.isArray(logEvents) || !logEvents.length) return [];
+  const wallet = normalizeAddress(walletAddress);
+
+  const transfers = [];
+  for (const logEvent of logEvents) {
+    const decodedTransfer =
+      tryDecodeTransferFromDecoded(logEvent?.decoded) ||
+      tryDecodeTransferFromRawLog(logEvent);
+
+    if (!decodedTransfer) continue;
+
+    const fromNorm = normalizeAddress(decodedTransfer.from);
+    const toNorm = normalizeAddress(decodedTransfer.to);
+    if (wallet && fromNorm !== wallet && toNorm !== wallet) continue;
+
+    const tokenAddress =
+      logEvent?.sender_contract_address ||
+      logEvent?.sender_address ||
+      logEvent?.contract_address ||
+      null;
+
+    transfers.push({
+      tokenAddress: tokenAddress ? String(tokenAddress) : null,
+      tokenSymbol: logEvent?.sender_contract_ticker_symbol ? String(logEvent.sender_contract_ticker_symbol) : null,
+      tokenDecimals: Number.isFinite(Number(logEvent?.sender_contract_decimals)) ? Number(logEvent.sender_contract_decimals) : null,
+      from: decodedTransfer.from,
+      to: decodedTransfer.to,
+      amount: decodedTransfer.amount,
+      logIndex: Number.isFinite(Number(logEvent?.log_offset)) ? Number(logEvent.log_offset) : null
+    });
+  }
+
+  return transfers;
+}
 
 async function fetchGoldrushTxs(address, chain, cursor) {
 
@@ -72,13 +182,45 @@ async function fetchGoldrushTxs(address, chain, cursor) {
 
     return {
       transactions: items.map(tx => ({
-        txHash: tx.tx_hash,
-        blockNumber: tx.block_number,
-        timestamp: new Date(tx.block_signed_at).getTime(),
-        from: tx.from_address,
-        to: tx.to_address,
-        value: tx.value,
-        assetType: 'NATIVE'
+        ...(() => {
+          const nativeValue = tx?.value ?? '0';
+          const tokenTransfers = extractTokenTransfers(tx?.log_events, address);
+
+          const envelopeFrom = tx?.from_address;
+          const envelopeTo = tx?.to_address;
+
+          // Heuristic: when the tx carries 0 native value and has exactly one
+          // ERC20 Transfer involving the wallet, treat the ERC20 transfer as the primary ledger entry.
+          if (tokenTransfers.length === 1 && safeBigIntString(nativeValue) === '0') {
+            const primary = tokenTransfers[0];
+            return {
+              txHash: tx.tx_hash,
+              blockNumber: tx.block_number,
+              timestamp: new Date(tx.block_signed_at).getTime(),
+              from: primary.from,
+              to: primary.to,
+              value: primary.amount,
+              assetType: 'ERC20',
+              tokenAddress: primary.tokenAddress,
+              tokenSymbol: primary.tokenSymbol,
+              tokenDecimals: primary.tokenDecimals,
+              nativeValue: safeBigIntString(nativeValue),
+              tokenTransfers
+            };
+          }
+
+          return {
+            txHash: tx.tx_hash,
+            blockNumber: tx.block_number,
+            timestamp: new Date(tx.block_signed_at).getTime(),
+            from: envelopeFrom,
+            to: envelopeTo,
+            value: safeBigIntString(nativeValue),
+            assetType: tokenTransfers.length ? 'ERC20' : 'NATIVE',
+            nativeValue: safeBigIntString(nativeValue),
+            tokenTransfers
+          };
+        })()
       })),
       nextCursor: data?.pagination?.next_cursor
     };

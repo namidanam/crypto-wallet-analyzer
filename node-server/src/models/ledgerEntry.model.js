@@ -12,6 +12,25 @@ const LedgerEntrySchema = new Schema({
   from: String,
   to: String,
   amount: String,
+  amountRaw: String,
+  nativeValue: String,
+
+  // For simple single-token transfers, these mirror the "primary" token transfer.
+  tokenAddress: String,
+  tokenSymbol: String,
+  tokenDecimals: Number,
+
+  // For contract interactions, capture all ERC20 Transfer events involving the wallet.
+  tokenTransfers: [{
+    tokenAddress: String,
+    tokenSymbol: String,
+    tokenDecimals: Number,
+    from: String,
+    to: String,
+    amount: String,
+    amountRaw: String,
+    logIndex: Number
+  }],
 
   assetType: {
     type: String,
@@ -21,13 +40,13 @@ const LedgerEntrySchema = new Schema({
 
   source: {
     type: String,
-    enum: ['goldrush', 'tatum', 'covalent'],
+    enum: ['goldrush', 'tatum', 'covalent', 'manual'],
     required: true
   }
 }, { strict: true });
 
 LedgerEntrySchema.index(
-  { wallet: 1, txHash: 1 },
+  { wallet: 1, chain: 1, txHash: 1 },
   { unique: true }
 );
 

@@ -81,7 +81,20 @@ describe('Wallet Controller', () => {
   it('should return transactions for wallet', async () => {
     mockWalletFindOne.mockResolvedValue({ _id: 'w1', address: '0x123', chain: 'eth-mainnet', syncStatus: 'SYNCED' });
     mockLedgerFind.mockReturnValue({
-      sort: jest.fn(() => Promise.resolve([{ txHash: 'tx1' }]))
+      sort: jest.fn(() =>
+        Promise.resolve([{
+          txHash: 'tx1',
+          assetType: 'ERC20',
+          amount: '0.710803131710045577',
+          amountRaw: '710803131710045577',
+          tokenDecimals: 18,
+          tokenTransfers: [{
+            tokenDecimals: 18,
+            amount: '0.710803131710045577',
+            amountRaw: '710803131710045577'
+          }]
+        }])
+      )
     });
 
     const req = { query: { address: '0x123', chain: 'eth-mainnet' } };
@@ -91,6 +104,10 @@ describe('Wallet Controller', () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.body.transactions.length).toBe(1);
+    expect(res.body.transactions[0].amount).toBe('0.710803131710045577');
+    expect(res.body.transactions[0].amountRaw).toBe('710803131710045577');
+    expect(res.body.transactions[0].tokenTransfers[0].amount).toBe('0.710803131710045577');
+    expect(res.body.transactions[0].tokenTransfers[0].amountRaw).toBe('710803131710045577');
   });
 
 }); 

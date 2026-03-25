@@ -49,8 +49,69 @@ describe('Goldrush Service - fetchGoldrushTxs', () => {
 
     expect(result.transactions.length).toBe(1);
     expect(result.transactions[0].txHash).toBe('tx1');
+    expect(result.transactions[0].assetType).toBe('NATIVE');
 
     expect(axios.get).toHaveBeenCalled();
+  });
+
+  it('should extract ERC20 Transfer from log_events (value=0 tx)', async () => {
+    axios.get.mockResolvedValue({
+      data: {
+        data: {
+          items: [
+            {
+              tx_hash: 'tx2',
+              block_number: 456,
+              block_signed_at: new Date().toISOString(),
+              from_address: '0x123',
+              to_address: '0xTokenContract',
+              value: '0',
+              log_events: [
+                {
+                  log_offset: 7,
+                  sender_contract_address: '0xTokenContract',
+                  sender_contract_ticker_symbol: 'USDT',
+                  sender_contract_decimals: 6,
+                  decoded: {
+                    name: 'Transfer',
+                    params: [
+                      { name: 'from', value: '0x123' },
+                      { name: 'to', value: '0x456' },
+                      { name: 'value', value: '1000000' }
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    });
+
+    const result = await fetchGoldrushTxs('0x123', 'bsc-mainnet');
+    expect(result.transactions.length).toBe(1);
+
+    const tx = result.transactions[0];
+    expect(tx.txHash).toBe('tx2');
+    expect(tx.assetType).toBe('ERC20');
+    expect(tx.nativeValue).toBe('0');
+    expect(tx.value).toBe('1000000');
+    expect(tx.from).toBe('0x123');
+    expect(tx.to).toBe('0x456');
+    expect(tx.tokenAddress).toBe('0xTokenContract');
+    expect(tx.tokenSymbol).toBe('USDT');
+    expect(tx.tokenDecimals).toBe(6);
+    expect(tx.tokenTransfers).toEqual([
+      expect.objectContaining({
+        tokenAddress: '0xTokenContract',
+        tokenSymbol: 'USDT',
+        tokenDecimals: 6,
+        from: '0x123',
+        to: '0x456',
+        amount: '1000000',
+        logIndex: 7
+      })
+    ]);
   });
 
   // -----------------------------------

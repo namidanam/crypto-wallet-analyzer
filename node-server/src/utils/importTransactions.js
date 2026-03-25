@@ -6,6 +6,7 @@ import axios from 'axios';
 import { fetchGoldrushTxs } from '../services/goldrush.service.js';
 import { fetchTatumTxs } from '../services/tatum.service.js';
 import { retryWithBackoff } from './retry.js';
+import { formatUnits } from './units.js';
 
 dotenv.config();
 
@@ -93,7 +94,7 @@ async function importTransactionsFromAPI(address, chain) {
       const ops = valid.map(doc => ({
         updateOne: {
           filter: { wallet: doc.wallet, chain: doc.chain, txHash: doc.txHash },
-          update: { $setOnInsert: doc },
+          update: { $set: doc },
           upsert: true
         }
       }));
@@ -126,6 +127,27 @@ async function importTransactionsFromAPI(address, chain) {
         totalFetched += transactions.length;
 
         const txs = transactions.map(tx => ({
+          ...(() => {
+            const valueRaw = String(tx?.value ?? '0');
+            const tokenDecimals = Number.isFinite(Number(tx?.tokenDecimals)) ? Number(tx.tokenDecimals) : null;
+            const isPrimaryErc20 = tx?.assetType === 'ERC20' && tokenDecimals !== null;
+            const amountRaw = isPrimaryErc20 ? valueRaw : undefined;
+            const amount = isPrimaryErc20 ? formatUnits(valueRaw, tokenDecimals) : valueRaw;
+
+            const tokenTransfers = Array.isArray(tx?.tokenTransfers)
+              ? tx.tokenTransfers.map(t => {
+                const raw = String(t?.amount ?? '0');
+                const dec = Number.isFinite(Number(t?.tokenDecimals)) ? Number(t.tokenDecimals) : null;
+                return {
+                  ...t,
+                  amountRaw: raw,
+                  amount: dec !== null ? formatUnits(raw, dec) : raw
+                };
+              })
+              : undefined;
+
+            return { amount, amountRaw, tokenTransfers };
+          })(),
           wallet: address,
           chain: chain,
           txHash: tx.txHash ? String(tx.txHash) : '',
@@ -133,7 +155,10 @@ async function importTransactionsFromAPI(address, chain) {
           timestamp: Number.isFinite(Number(tx.timestamp)) ? Number(tx.timestamp) : Date.now(),
           from: tx.from,
           to: tx.to,
-          amount: tx.value,
+          nativeValue: tx.nativeValue,
+          tokenAddress: tx.tokenAddress,
+          tokenSymbol: tx.tokenSymbol,
+          tokenDecimals: tx.tokenDecimals,
           assetType: tx.assetType || 'NATIVE',
           source: 'goldrush'
         }));
@@ -169,6 +194,27 @@ async function importTransactionsFromAPI(address, chain) {
         if (!transactions.length) break;
 
         const txs = transactions.map(tx => ({
+          ...(() => {
+            const valueRaw = String(tx?.value ?? '0');
+            const tokenDecimals = Number.isFinite(Number(tx?.tokenDecimals)) ? Number(tx.tokenDecimals) : null;
+            const isPrimaryErc20 = tx?.assetType === 'ERC20' && tokenDecimals !== null;
+            const amountRaw = isPrimaryErc20 ? valueRaw : undefined;
+            const amount = isPrimaryErc20 ? formatUnits(valueRaw, tokenDecimals) : valueRaw;
+
+            const tokenTransfers = Array.isArray(tx?.tokenTransfers)
+              ? tx.tokenTransfers.map(t => {
+                const raw = String(t?.amount ?? '0');
+                const dec = Number.isFinite(Number(t?.tokenDecimals)) ? Number(t.tokenDecimals) : null;
+                return {
+                  ...t,
+                  amountRaw: raw,
+                  amount: dec !== null ? formatUnits(raw, dec) : raw
+                };
+              })
+              : undefined;
+
+            return { amount, amountRaw, tokenTransfers };
+          })(),
           wallet: address,
           chain: chain,
           txHash: tx.txHash ? String(tx.txHash) : '',
@@ -176,7 +222,10 @@ async function importTransactionsFromAPI(address, chain) {
           timestamp: Number.isFinite(Number(tx.timestamp)) ? Number(tx.timestamp) : Date.now(),
           from: tx.from,
           to: tx.to,
-          amount: tx.value,
+          nativeValue: tx.nativeValue,
+          tokenAddress: tx.tokenAddress,
+          tokenSymbol: tx.tokenSymbol,
+          tokenDecimals: tx.tokenDecimals,
           assetType: tx.assetType || 'NATIVE',
           source: 'tatum'
         }));
@@ -254,6 +303,12 @@ async function importTransactionsFromJSON(address, chain, jsonData) {
       from: tx.from || tx.from_address,
       to: tx.to || tx.to_address,
       amount: tx.amount || tx.value || '0',
+      amountRaw: tx.amountRaw,
+      nativeValue: tx.nativeValue,
+      tokenAddress: tx.tokenAddress,
+      tokenSymbol: tx.tokenSymbol,
+      tokenDecimals: tx.tokenDecimals,
+      tokenTransfers: tx.tokenTransfers,
       assetType: tx.assetType || 'NATIVE',
       source: tx.source || 'manual'
     }));
