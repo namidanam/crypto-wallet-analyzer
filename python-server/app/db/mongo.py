@@ -22,3 +22,7 @@ def get_wallet_transactions(wallet_address):
     }))
 
     return transactions
+
+def insert_normalized_transactions(transactions):
+    if transactions:
+        normalized_collection.insert_many(transactions)

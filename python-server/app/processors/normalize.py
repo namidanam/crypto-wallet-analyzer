@@ -2,8 +2,8 @@
 NORMALIZED_SCHEMA = {
     "tx_hash": str,
     "wallet": str,
-    "from": str,
-    "to": str,
+    "from_address": str,
+    "to_address": str,
     "amount": float,
     "token": str,
     "timestamp": int,
@@ -22,6 +22,10 @@ def normalize_evm(tx, wallet_address):
 
     token_transfers = tx.get("tokenTransfers", [])
 
+    # Optional fields for EVM specific chains
+    asset_type = tx.get("assetType")
+    native_value = tx.get("nativeValue")
+
     # If tokenTransfers exist
     if token_transfers:
         for transfer in token_transfers:
@@ -39,13 +43,18 @@ def normalize_evm(tx, wallet_address):
             normalized.append({
                 "tx_hash": tx_hash,
                 "wallet": wallet_address,
-                "from": from_addr,
-                "to": to_addr,
+                "from_address": from_addr,
+                "to_address": to_addr,
                 "amount": amount,
                 "token": token,
                 "timestamp": timestamp,
                 "chain": chain,
-                "direction": direction
+                "direction": direction,
+
+                # Additional fields that are specifically required by EVM chains
+                "tokenAddress": transfer.get("tokenAddress"),
+                "assetType": asset_type,
+                "nativeValue": native_value
             })
 
     # Else (no tokenTransfers)
@@ -62,23 +71,25 @@ def normalize_evm(tx, wallet_address):
         normalized.append({
             "tx_hash": tx_hash,
             "wallet": wallet_address,
-            "from": from_addr,
-            "to": to_addr,
+            "from_address": from_addr,
+            "to_address": to_addr,
             "amount": amount,
             "token": "NATIVE",
             "timestamp": timestamp,
             "chain": chain,
-            "direction": direction
+            "direction": direction,
+
+            # Handle EVM specific fields
+            "tokenAddress": None,
+            "assetType": asset_type,
+            "nativeValue": native_value
         })
 
     return normalized
 
 
-"""
-    Main normalization call - Routes all transactions to their 
-    respective normalizing functions
-"""
 
+# Routes all transactions to their respective chain normalizing functions
 def normalize_transaction(tx, wallet_address):
     chain = tx.get("chain", "")
 
