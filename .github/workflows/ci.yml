@@ -46,6 +46,7 @@ jobs:
           # Mongo URI points to nothing in unit tests — DB calls are mocked
           MONGO_URI: mongodb://localhost:27017/test
           DB_NAME: test
+          PYTHONPATH: .
         run: |
           pytest tests/test_normalize.py tests/test_risk_engine.py \
             -v \
