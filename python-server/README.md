@@ -67,6 +67,10 @@ isort app/
 mypy app/
 ```
 
+## Effort Estimation (Intermediate COCOMO)
+
+Project-level Intermediate COCOMO estimation (excluding `node_modules/`, generated artifacts, documentation, and config/lock files) is documented in `docs/ESTIMATION.md`.
+
 
 ## Running the Python Server
 
