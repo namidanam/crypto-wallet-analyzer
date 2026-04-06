@@ -251,6 +251,18 @@ pytest
 
 ---
 
+## 📐 Effort Estimation (Intermediate COCOMO)
+
+To estimate effort using **Intermediate COCOMO'81** while excluding `node_modules/`, generated artifacts, documentation, and configuration/lock files, see `docs/ESTIMATION.md`.
+
+Quick run (uses only tracked production code by default):
+
+```bash
+python3 scripts/cocomo_intermediate.py
+```
+
+---
+
 ## 🔧 Configuration
 
 ### API Keys Required
