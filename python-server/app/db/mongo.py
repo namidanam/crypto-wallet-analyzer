@@ -2,35 +2,44 @@ from pymongo import MongoClient
 from app.config.settings import MONGO_URI, DB_NAME
 from datetime import datetime, timezone
 
-client = MongoClient(MONGO_URI)
-db = client[DB_NAME]
+# Lazy connection — only initialize when MONGO_URI is configured
+_client = None
+_db = None
 
-ledger_collection     = db["ledgerentries"]
-wallet_collection     = db["wallets"]
-normalized_collection = db["normalized_transactions"]
-analysis_collection   = db["analysisHistory"]          # REQ-9
+
+def _get_db():
+    global _client, _db
+    if _db is None:
+        if not MONGO_URI:
+            raise RuntimeError("MONGO_URI is not configured. Set it in .env to use DB features.")
+        _client = MongoClient(MONGO_URI)
+        _db = _client[DB_NAME]
+    return _db
 
 
 def get_wallet_transactions(wallet_address: str) -> list:
     """Fetch all raw transactions for a wallet from ledgerentries."""
-    return list(ledger_collection.find({"wallet": wallet_address}))
+    db = _get_db()
+    return list(db["ledgerentries"].find({"wallet": wallet_address}))
 
 
 def insert_normalized_transactions(transactions: list) -> None:
     if transactions:
-        normalized_collection.insert_many(transactions)
+        db = _get_db()
+        db["normalized_transactions"].insert_many(transactions)
 
 
 def is_wallet_normalized(wallet: str) -> bool:
-    return normalized_collection.count_documents({"wallet": wallet}) > 0
+    db = _get_db()
+    return db["normalized_transactions"].count_documents({"wallet": wallet}) > 0
 
 
 def save_analysis_result(wallet: str, risk_result: dict) -> None:
     """
     Upserts the risk analysis result into analysisHistory collection.
-    Node.js wallet.controller.js also writes here — this is the Python side.
     """
-    analysis_collection.update_one(
+    db = _get_db()
+    db["analysisHistory"].update_one(
         {"wallet": wallet},
         {
             "$set": {

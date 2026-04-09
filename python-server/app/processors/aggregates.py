@@ -1,121 +1,93 @@
-"""
-aggregates.py
-─────────────
-Computes statistical aggregates from a list of NormalizedTransaction dicts.
-Called by main.py → /analyze/{wallet} endpoint, feeding into risk_engine.py.
-
-Output shape (AggregateResult):
-    {
-      "wallet":            str,
-      "tx_count":          int,
-      "total_volume":      float,   # sum of all amounts (IN + OUT)
-      "avg_tx_value":      float,
-      "max_tx_value":      float,
-      "unique_counterparties": int, # distinct from/to addresses (excluding wallet)
-      "in_count":          int,
-      "out_count":         int,
-      "in_volume":         float,
-      "out_volume":        float,
-      "frequency_by_day":  dict[str, int],  # "YYYY-MM-DD" → count
-      "counterparty_volumes": dict[str, float], # address → total volume
-    }
-"""
-
-from datetime import datetime, timezone
-from collections import defaultdict
+from app.schemas.models import WalletHistory, WalletAggregates
+import pandas as pd
+import numpy as np
 
 
-def compute_aggregates(normalized_txs: list, wallet_address: str) -> dict:
-    """
-    Computes aggregate statistics from a normalized transaction list.
+def compute_aggregates(history: WalletHistory) -> WalletAggregates:
+    if not history.transactions:
+        return WalletAggregates(
+            wallet_address=history.wallet_address,
+            total_tx_count=0,
+            total_volume=0.0,
+            unique_interacted_addresses=0,
+            avg_tx_value=0.0,
+            active_days=0,
+            risk_factors=[]
+        )
 
-    @param normalized_txs  - List of NormalizedTransaction dicts (output of normalize.py).
-    @param wallet_address  - The wallet being analyzed.
-    @returns AggregateResult dict.
-    """
-    if not normalized_txs:
-        return _empty_aggregates(wallet_address)
+    df = pd.DataFrame([tx.model_dump() for tx in history.transactions])
 
-    tx_count = 0
-    total_volume = 0.0
-    in_count = 0
-    out_count = 0
-    in_volume = 0.0
-    out_volume = 0.0
-    max_tx_value = 0.0
-    amounts = []
+    # ── Core aggregates (existing) ──────────────────────────────────
+    total_tx = len(df)
+    total_vol = float(df["value"].sum())
 
-    # address → total volume transacted with this wallet
-    counterparty_volumes: dict[str, float] = defaultdict(float)
+    unique_addrs = set(df["from_address"]).union(set(df["to_address"].dropna()))
+    if history.wallet_address in unique_addrs:
+        unique_addrs.remove(history.wallet_address)
 
-    # "YYYY-MM-DD" → number of transactions on that day
-    frequency_by_day: dict[str, int] = defaultdict(int)
+    avg_val = total_vol / total_tx if total_tx > 0 else 0.0
 
-    for tx in normalized_txs:
-        amount = float(tx.get("amount", 0) or 0)
-        direction = tx.get("direction", "")
-        timestamp_ms = int(tx.get("timestamp", 0) or 0)
+    df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
+    active_days = int(df["timestamp"].dt.date.nunique())
 
-        tx_count += 1
-        total_volume += amount
-        amounts.append(amount)
-        max_tx_value = max(max_tx_value, amount)
+    # ── Value statistics ────────────────────────────────────────────
+    max_tx_value = float(df["value"].max())
+    min_tx_value = float(df["value"].min())
+    std_tx_value = float(df["value"].std()) if total_tx > 1 else 0.0
 
-        # Direction breakdown
-        if direction == "IN":
-            in_count += 1
-            in_volume += amount
-            counterparty = tx.get("from_address") or ""
+    # ── Directional flow analysis ───────────────────────────────────
+    wallet = history.wallet_address.lower()
+    outgoing = df[df["from_address"].str.lower() == wallet]
+    incoming = df[df["to_address"].fillna("").str.lower() == wallet]
+
+    outgoing_tx_count = len(outgoing)
+    incoming_tx_count = len(incoming)
+    total_outgoing_volume = float(outgoing["value"].sum())
+    total_incoming_volume = float(incoming["value"].sum())
+    net_flow = total_incoming_volume - total_outgoing_volume
+
+    # ── Timing analysis ─────────────────────────────────────────────
+    if total_tx > 1:
+        sorted_ts = df["timestamp"].sort_values()
+        diffs = sorted_ts.diff().dropna().dt.total_seconds()
+        avg_time_between_tx = float(diffs.mean()) if len(diffs) > 0 else 0.0
+    else:
+        avg_time_between_tx = 0.0
+
+    # ── Counterparty concentration ──────────────────────────────────
+    counterparty_volumes: dict[str, float] = {}
+    for _, row in df.iterrows():
+        if row["from_address"].lower() == wallet:
+            addr = str(row.get("to_address", "")).lower()
         else:
-            out_count += 1
-            out_volume += amount
-            counterparty = tx.get("to_address") or ""
+            addr = row["from_address"].lower()
+        if addr:
+            counterparty_volumes[addr] = counterparty_volumes.get(addr, 0.0) + float(row["value"])
 
-        # Counterparty tracking (skip self)
-        if counterparty and counterparty.lower() != wallet_address.lower():
-            counterparty_volumes[counterparty] += amount
+    max_single_address_volume = float(max(counterparty_volumes.values())) if counterparty_volumes else 0.0
 
-        # Daily frequency
-        if timestamp_ms:
-            # Tatum gives seconds for older txs; normalise to ms
-            ts = timestamp_ms if timestamp_ms > 1_000_000_000_000 else timestamp_ms * 1000
-            day = datetime.fromtimestamp(ts / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
-            frequency_by_day[day] += 1
+    # ── Error analysis ──────────────────────────────────────────────
+    error_tx_count = int(df["is_error"].sum())
+    error_tx_ratio = error_tx_count / total_tx if total_tx > 0 else 0.0
 
-    avg_tx_value = total_volume / tx_count if tx_count else 0.0
-    unique_counterparties = len(counterparty_volumes)
-
-    return {
-        "wallet":                wallet_address,
-        "tx_count":              tx_count,
-        "total_volume":          round(total_volume, 8),
-        "avg_tx_value":          round(avg_tx_value, 8),
-        "max_tx_value":          round(max_tx_value, 8),
-        "unique_counterparties": unique_counterparties,
-        "in_count":              in_count,
-        "out_count":             out_count,
-        "in_volume":             round(in_volume, 8),
-        "out_volume":            round(out_volume, 8),
-        "frequency_by_day":      dict(frequency_by_day),
-        "counterparty_volumes":  dict(counterparty_volumes),
-        # Keep raw amounts list for HHI / Gini calculation in risk_engine.py
-        "_amounts":              amounts,
-    }
-
-
-def _empty_aggregates(wallet_address: str) -> dict:
-    return {
-        "wallet":                wallet_address,
-        "tx_count":              0,
-        "total_volume":          0.0,
-        "avg_tx_value":          0.0,
-        "max_tx_value":          0.0,
-        "unique_counterparties": 0,
-        "in_count":              0,
-        "out_count":             0,
-        "in_volume":             0.0,
-        "out_volume":            0.0,
-        "frequency_by_day":      {},
-        "counterparty_volumes":  {},
-        "_amounts":              [],
-    }
+    return WalletAggregates(
+        wallet_address=history.wallet_address,
+        total_tx_count=total_tx,
+        total_volume=total_vol,
+        unique_interacted_addresses=len(unique_addrs),
+        avg_tx_value=float(avg_val),
+        active_days=active_days,
+        risk_factors=[],
+        max_tx_value=max_tx_value,
+        min_tx_value=min_tx_value,
+        std_tx_value=std_tx_value,
+        incoming_tx_count=incoming_tx_count,
+        outgoing_tx_count=outgoing_tx_count,
+        total_incoming_volume=total_incoming_volume,
+        total_outgoing_volume=total_outgoing_volume,
+        net_flow=net_flow,
+        avg_time_between_tx=avg_time_between_tx,
+        max_single_address_volume=max_single_address_volume,
+        error_tx_count=error_tx_count,
+        error_tx_ratio=error_tx_ratio,
+    )

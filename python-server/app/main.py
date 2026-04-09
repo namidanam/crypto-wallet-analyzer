@@ -1,22 +1,50 @@
 from fastapi import FastAPI, HTTPException
+from app.schemas.models import WalletHistory, WalletAggregates, RiskScoreResponse
+from app.processors.aggregates import compute_aggregates
+from app.processors.aggregates_dict import compute_aggregates as compute_aggregates_dict
+from app.processors.risk_engine import RiskEngine
+from app.processors.risk_engine_statistical import (
+    compute_risk_score,
+)
 from app.db.mongo import (
     get_wallet_transactions,
     insert_normalized_transactions,
     is_wallet_normalized,
     save_analysis_result,
 )
-from app.processors.normalize   import normalize_transactions
-from app.processors.aggregates  import compute_aggregates
-from app.processors.risk_engine import compute_risk_score
-from app.schemas.transaction    import NormalizedTransaction
+from app.processors.normalize import normalize_transactions
+from app.schemas.transaction import NormalizedTransaction
 
-app = FastAPI()
+app = FastAPI(
+    title="Crypto Wallet Risk Analyzer - Python Engine",
+    description="Calculates statistical aggregates and ML risk scores from normalized data.",
+    version="2.0.0",
+)
 
+risk_engine = RiskEngine()
+
+
+# ── Health ──────────────────────────────────────────────────────────
 
 @app.get("/health")
-def get_health():
-    return {"status": "healthy", "service": "python-normalizer"}
+def health_check():
+    return {"status": "healthy", "service": "python-server"}
 
+
+# ── Pydantic-based endpoints (ML risk engine) ──────────────────────
+
+@app.post("/aggregates", response_model=WalletAggregates)
+def get_aggregates(history: WalletHistory):
+    return compute_aggregates(history)
+
+
+@app.post("/risk-score", response_model=RiskScoreResponse)
+def get_risk_score(history: WalletHistory):
+    aggregates = compute_aggregates(history)
+    return risk_engine.calculate_risk(aggregates)
+
+
+# ── Dict-based endpoints (normalize + HHI/Gini/temporal pipeline) ──
 
 @app.post("/normalize/{wallet}")
 def normalize_wallet(wallet: str):
@@ -32,10 +60,8 @@ def normalize_wallet(wallet: str):
     if not raw_txns:
         return {"message": "No transactions found"}
 
-    # 1. Normalize
     normalized = normalize_transactions(raw_txns, wallet)
 
-    # 2. Validate with Pydantic
     validated = []
     for tx in normalized:
         try:
@@ -44,11 +70,10 @@ def normalize_wallet(wallet: str):
         except Exception as e:
             print("Validation error:", e)
 
-    # 3. Store
     insert_normalized_transactions(validated)
 
     return {
-        "wallet":           wallet,
+        "wallet": wallet,
         "normalized_count": len(validated),
     }
 
@@ -57,26 +82,12 @@ def normalize_wallet(wallet: str):
 def analyze_wallet(wallet: str):
     """
     Full pipeline: normalize → aggregate → risk score → store.
-    Returns the risk result to Node.js (python.service.js → wallet.controller.js).
-
-    Response shape:
-        {
-          "wallet":       str,
-          "score":        int,   # 0–100
-          "tier":         str,   # LOW / MEDIUM / HIGH / CRITICAL
-          "hhi":          float,
-          "gini":         float,
-          "temporal":     { anomaly_score, anomalous_days, ... },
-          "tx_count":     int,
-          "total_volume": float,
-        }
+    Returns the risk result to Node.js.
     """
-    # ── Step 1: Fetch raw transactions ──
     raw_txns = get_wallet_transactions(wallet)
     if not raw_txns:
         raise HTTPException(status_code=404, detail="No transactions found for wallet")
 
-    # ── Step 2: Normalize ──
     normalized = normalize_transactions(raw_txns, wallet)
 
     validated = []
@@ -90,17 +101,16 @@ def analyze_wallet(wallet: str):
     if not validated:
         raise HTTPException(status_code=422, detail="All transactions failed validation")
 
-    # Store normalized (idempotent — skip if already stored)
     if not is_wallet_normalized(wallet):
         insert_normalized_transactions(validated)
 
-    # ── Step 3: Aggregate ──
-    aggregates = compute_aggregates(validated, wallet)
-
-    # ── Step 4: Risk Score ──
+    aggregates = compute_aggregates_dict(validated, wallet)
     risk_result = compute_risk_score(aggregates)
-
-    # ── Step 5: Persist analysis history ──
     save_analysis_result(wallet, risk_result)
 
     return risk_result
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)

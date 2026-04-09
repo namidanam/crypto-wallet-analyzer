@@ -1,231 +1,200 @@
-"""
-risk_engine.py
-──────────────
-Computes the composite risk score (0–100) for a wallet.
+import os
+import numpy as np
+import joblib
+from app.schemas.models import WalletAggregates, RiskScoreResponse
 
-Metrics implemented:
-  1. HHI  — Herfindahl-Hirschman Index (value concentration)   ✅ REQ-8.1
-  2. Gini — Gini coefficient (wealth/transfer inequality)        ✅ REQ-8.1 / Sprint 4
-  3. Z-score temporal anomaly detection                          ✅ REQ-8.1 / Sprint 4
-
-Score tiers:
-  0–25  → LOW
-  26–50 → MEDIUM
-  51–75 → HIGH
-  76–100 → CRITICAL
-"""
-
-import math
-import statistics
-from collections import defaultdict
-
-
-# ─────────────────────────────────────────────────────────
-# 1. HHI — Herfindahl-Hirschman Index
-#    Measures how concentrated transactions are among
-#    a small number of counterparties.
-#    Range: 0 (perfectly spread) → 1 (one counterparty).
-#    Risk increases as HHI → 1.
-# ─────────────────────────────────────────────────────────
-
-def compute_hhi(counterparty_volumes: dict) -> float:
-    """
-    @param counterparty_volumes - dict[address, total_volume]
-    @returns float HHI in [0, 1]
-    """
-    total = sum(counterparty_volumes.values())
-    if total == 0 or not counterparty_volumes:
-        return 0.0
-
-    hhi = sum((v / total) ** 2 for v in counterparty_volumes.values())
-    return round(hhi, 6)
+# Ordered list of feature names used by the ML model.
+# Must match the order used during training (see train_model.py).
+ML_FEATURE_NAMES = [
+    "total_tx_count",
+    "total_volume",
+    "unique_interacted_addresses",
+    "avg_tx_value",
+    "active_days",
+    "max_tx_value",
+    "min_tx_value",
+    "std_tx_value",
+    "incoming_tx_count",
+    "outgoing_tx_count",
+    "total_incoming_volume",
+    "total_outgoing_volume",
+    "net_flow",
+    "avg_time_between_tx",
+    "max_single_address_volume",
+    "error_tx_count",
+    "error_tx_ratio",
+]
 
 
-# ─────────────────────────────────────────────────────────
-# 2. Gini Coefficient
-#    Measures inequality of transaction values.
-#    Range: 0 (all txs equal) → 1 (one tx dominates).
-#    High Gini → unusual spikes = risk signal.
-# ─────────────────────────────────────────────────────────
+class RiskEngine:
+    def __init__(self):
+        self.model_path = os.path.join(os.path.dirname(__file__), "ml_model.joblib")
+        self.model = self._load_model()
 
-def compute_gini(amounts: list) -> float:
-    """
-    Computes the Gini coefficient from a list of transaction amounts.
-    Uses the sorted absolute-difference formula — O(n log n).
+    def _load_model(self):
+        if os.path.exists(self.model_path):
+            return joblib.load(self.model_path)
+        return None
 
-    @param amounts - List of floats (transaction amounts).
-    @returns float Gini in [0, 1]
-    """
-    n = len(amounts)
-    if n == 0:
-        return 0.0
+    # ── Heuristic scoring ───────────────────────────────────────────
+    def evaluate_heuristic(self, aggregates: WalletAggregates) -> float:
+        score = 10.0
 
-    # Filter out zero/negative values
-    vals = sorted(v for v in amounts if v > 0)
-    n = len(vals)
-    if n == 0:
-        return 0.0
+        # --- Existing rules (unchanged) ---
+        if aggregates.total_tx_count > 1000:
+            score += 30
+            if "High transaction frequency" not in aggregates.risk_factors:
+                aggregates.risk_factors.append("High transaction frequency")
 
-    total = sum(vals)
-    if total == 0:
-        return 0.0
+        if aggregates.total_volume > 100000:
+            score += 20
+            if "High transaction volume" not in aggregates.risk_factors:
+                aggregates.risk_factors.append("High transaction volume")
 
-    # Gini = (2 * Σ i*x_i) / (n * Σ x_i) - (n+1)/n
-    cumulative_sum = sum((i + 1) * v for i, v in enumerate(vals))
-    gini = (2 * cumulative_sum) / (n * total) - (n + 1) / n
-    return round(max(0.0, min(1.0, gini)), 6)
+        if aggregates.unique_interacted_addresses > 500:
+            score += 20
 
+        if aggregates.active_days < 3 and aggregates.total_tx_count > 50:
+            score += 30
+            if "High activity in short duration (burner wallet format)" not in aggregates.risk_factors:
+                aggregates.risk_factors.append("High activity in short duration (burner wallet format)")
 
-# ─────────────────────────────────────────────────────────
-# 3. Temporal Anomaly Detection — Z-score
-#    Detects days with abnormally high transaction frequency.
-#    A day is anomalous if its count > mean + 2*std.
-#    Risk score = fraction of anomalous days.
-# ─────────────────────────────────────────────────────────
+        # --- New rule 1: Large single transaction (whale detection) ---
+        if aggregates.max_tx_value > 50000:
+            score += 15
+            if "Unusually large single transaction" not in aggregates.risk_factors:
+                aggregates.risk_factors.append("Unusually large single transaction")
 
-def compute_temporal_anomaly(frequency_by_day: dict) -> dict:
-    """
-    Detects temporal spikes in daily transaction frequency using Z-scores.
+        # --- New rule 2: High error rate ---
+        if aggregates.error_tx_ratio > 0.15:
+            score += 15
+            if "High failed transaction rate" not in aggregates.risk_factors:
+                aggregates.risk_factors.append("High failed transaction rate")
 
-    @param frequency_by_day - dict["YYYY-MM-DD", int] from aggregates.py
-    @returns {
-        "anomaly_score":   float in [0, 1],
-        "anomalous_days":  list[str],
-        "mean_daily_tx":   float,
-        "std_daily_tx":    float,
-        "z_threshold":     float,
-    }
-    """
-    if not frequency_by_day:
-        return {
-            "anomaly_score": 0.0,
-            "anomalous_days": [],
-            "mean_daily_tx": 0.0,
-            "std_daily_tx": 0.0,
-            "z_threshold": 2.0,
-        }
+        # --- New rule 3: Mixer pattern (near-zero net flow + high volume) ---
+        if (aggregates.total_tx_count > 100
+                and aggregates.total_volume > 0
+                and abs(aggregates.net_flow) < aggregates.total_volume * 0.05):
+            score += 25
+            if "Near-zero net flow (potential mixer)" not in aggregates.risk_factors:
+                aggregates.risk_factors.append("Near-zero net flow (potential mixer)")
 
-    counts = list(frequency_by_day.values())
+        # --- New rule 4: Bot detection (rapid-fire transactions) ---
+        if aggregates.avg_time_between_tx < 30 and aggregates.total_tx_count > 200:
+            score += 20
+            if "Rapid-fire transactions (bot pattern)" not in aggregates.risk_factors:
+                aggregates.risk_factors.append("Rapid-fire transactions (bot pattern)")
 
-    if len(counts) < 2:
-        # Only one data point — can't compute std
-        return {
-            "anomaly_score": 0.0,
-            "anomalous_days": [],
-            "mean_daily_tx": float(counts[0]) if counts else 0.0,
-            "std_daily_tx": 0.0,
-            "z_threshold": 2.0,
-        }
+        # --- New rule 5: Address concentration ---
+        if (aggregates.total_volume > 0
+                and aggregates.max_single_address_volume > aggregates.total_volume * 0.8):
+            score += 15
+            if "High counterparty concentration" not in aggregates.risk_factors:
+                aggregates.risk_factors.append("High counterparty concentration")
 
-    mean = statistics.mean(counts)
-    std = statistics.stdev(counts)
-    z_threshold = 2.0
+        # --- New rule 6: Suspiciously uniform transaction values ---
+        if (aggregates.total_tx_count > 50
+                and aggregates.avg_tx_value > 0
+                and aggregates.std_tx_value < aggregates.avg_tx_value * 0.05):
+            score += 10
+            if "Suspiciously uniform transaction values" not in aggregates.risk_factors:
+                aggregates.risk_factors.append("Suspiciously uniform transaction values")
 
-    anomalous_days = []
-    if std > 0:
-        for day, count in frequency_by_day.items():
-            z_score = (count - mean) / std
-            if z_score > z_threshold:
-                anomalous_days.append(day)
+        return min(score, 100.0)
 
-    total_days = len(frequency_by_day)
-    anomaly_score = len(anomalous_days) / total_days if total_days else 0.0
+    # ── ML scoring ──────────────────────────────────────────────────
+    def _build_feature_vector(self, aggregates: WalletAggregates) -> list[float]:
+        """Build the 17-feature vector matching training order."""
+        return [
+            float(aggregates.total_tx_count),
+            aggregates.total_volume,
+            float(aggregates.unique_interacted_addresses),
+            aggregates.avg_tx_value,
+            float(aggregates.active_days),
+            aggregates.max_tx_value,
+            aggregates.min_tx_value,
+            aggregates.std_tx_value,
+            float(aggregates.incoming_tx_count),
+            float(aggregates.outgoing_tx_count),
+            aggregates.total_incoming_volume,
+            aggregates.total_outgoing_volume,
+            aggregates.net_flow,
+            aggregates.avg_time_between_tx,
+            aggregates.max_single_address_volume,
+            float(aggregates.error_tx_count),
+            aggregates.error_tx_ratio,
+        ]
 
-    return {
-        "anomaly_score":  round(anomaly_score, 6),
-        "anomalous_days": sorted(anomalous_days),
-        "mean_daily_tx":  round(mean, 4),
-        "std_daily_tx":   round(std, 4),
-        "z_threshold":    z_threshold,
-    }
+    def _compute_feature_contributions(
+        self, feature_vector: list[float]
+    ) -> dict[str, float]:
+        """
+        Approximate per-prediction feature importance using global
+        feature_importances_ weighted by the normalised input values.
+        Returns a dict mapping feature name → contribution percentage.
+        """
+        if self.model is None or not hasattr(self.model, "feature_importances_"):
+            return {}
 
+        importances = self.model.feature_importances_  # shape (n_features,)
+        fv = np.array(feature_vector, dtype=float)
 
-# ─────────────────────────────────────────────────────────
-# 4. Composite Risk Score
-#    Weighted combination of HHI, Gini, and temporal anomaly.
-#    Weights (tunable):
-#      HHI    → 40%
-#      Gini   → 35%
-#      Temporal anomaly → 25%
-# ─────────────────────────────────────────────────────────
+        # Normalise feature values to [0, 1] keeping zeros intact
+        fv_abs = np.abs(fv)
+        fv_max = fv_abs.max()
+        fv_norm = fv_abs / fv_max if fv_max > 0 else fv_abs
 
-WEIGHTS = {
-    "hhi":      0.40,
-    "gini":     0.35,
-    "temporal": 0.25,
-}
+        raw = importances * fv_norm
+        total = raw.sum()
+        if total == 0:
+            return {}
 
+        contributions: dict[str, float] = {}
+        for name, val in zip(ML_FEATURE_NAMES, raw / total * 100):
+            contributions[name] = round(float(val), 2)
 
-def _score_to_tier(score: float) -> str:
-    if score <= 25:
-        return "LOW"
-    elif score <= 50:
-        return "MEDIUM"
-    elif score <= 75:
-        return "HIGH"
-    else:
-        return "CRITICAL"
+        return contributions
 
+    def evaluate_ml(self, aggregates: WalletAggregates) -> tuple[float, dict[str, float]]:
+        """
+        Return (risk_score_0_to_100, feature_contributions_dict).
+        Falls back to (25.0, {}) when no model is available.
+        """
+        features = self._build_feature_vector(aggregates)
 
-def compute_risk_score(aggregates: dict) -> dict:
-    """
-    Computes the full risk assessment from an AggregateResult dict.
+        if not self.model:
+            return 25.0, {}
 
-    @param aggregates - Output of aggregates.compute_aggregates()
-    @returns {
-        "wallet":        str,
-        "score":         int  (0–100),
-        "tier":          str  (LOW / MEDIUM / HIGH / CRITICAL),
-        "hhi":           float,
-        "gini":          float,
-        "temporal":      dict  (anomaly sub-report),
-        "tx_count":      int,
-        "total_volume":  float,
-    }
-    """
-    wallet = aggregates.get("wallet", "")
+        try:
+            probs = self.model.predict_proba([features])
+            score = float(probs[0][1]) * 100.0
+            contributions = self._compute_feature_contributions(features)
+            return score, contributions
+        except Exception:
+            return 50.0, {}
 
-    # Pull pre-computed data from aggregates
-    counterparty_volumes = aggregates.get("counterparty_volumes", {})
-    amounts              = aggregates.get("_amounts", [])
-    frequency_by_day     = aggregates.get("frequency_by_day", {})
+    # ── Combined scoring ────────────────────────────────────────────
+    def calculate_risk(self, aggregates: WalletAggregates) -> RiskScoreResponse:
+        h_score = self.evaluate_heuristic(aggregates)
+        m_score, contributions = self.evaluate_ml(aggregates)
 
-    # Guard: no data → zero risk
-    if not amounts:
-        return {
-            "wallet":       wallet,
-            "score":        0,
-            "tier":         "LOW",
-            "hhi":          0.0,
-            "gini":         0.0,
-            "temporal":     compute_temporal_anomaly({}),
-            "tx_count":     0,
-            "total_volume": 0.0,
-        }
+        overall = (h_score * 0.6) + (m_score * 0.4)
 
-    # Compute individual metrics
-    hhi     = compute_hhi(counterparty_volumes)
-    gini    = compute_gini(amounts)
-    temporal = compute_temporal_anomaly(frequency_by_day)
+        if overall >= 80:
+            level = "CRITICAL"
+        elif overall >= 60:
+            level = "HIGH"
+        elif overall >= 30:
+            level = "MEDIUM"
+        else:
+            level = "LOW"
 
-    # Weighted composite (each metric already in [0, 1])
-    raw_score = (
-        WEIGHTS["hhi"]      * hhi +
-        WEIGHTS["gini"]     * gini +
-        WEIGHTS["temporal"] * temporal["anomaly_score"]
-    )
-
-    # Scale to 0–100 and clamp
-    score = int(min(100, max(0, round(raw_score * 100))))
-    tier  = _score_to_tier(score)
-
-    return {
-        "wallet":       wallet,
-        "score":        score,
-        "tier":         tier,
-        "hhi":          hhi,
-        "gini":         gini,
-        "temporal":     temporal,
-        "tx_count":     aggregates.get("tx_count", 0),
-        "total_volume": aggregates.get("total_volume", 0.0),
-    }
+        return RiskScoreResponse(
+            wallet_address=aggregates.wallet_address,
+            heuristic_score=round(h_score, 2),
+            ml_score=round(m_score, 2),
+            overall_score=round(overall, 2),
+            risk_level=level,
+            flags=aggregates.risk_factors,
+            feature_contributions=contributions,
+        )
