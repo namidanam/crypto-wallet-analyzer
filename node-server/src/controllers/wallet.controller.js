@@ -80,7 +80,7 @@ export async function getWalletTransactions(req, res) {
 // ─────────────────────────────────────────────────────────
 export async function analyzeWalletRisk(req, res) {
   try {
-    const { address, chain } = req.body;
+    const { address, chain, forceSync } = req.body;
 
     if (!address || !chain) {
       return res.status(400).json({ message: 'Address and chain are required' });
@@ -94,6 +94,14 @@ export async function analyzeWalletRisk(req, res) {
       // Trigger sync and wait — for fresh wallets we need data before scoring
       await startHistoricalSync(wallet);
       // Reload after sync
+      wallet = await Wallet.findOne({ address, chain });
+    }
+
+    // If keys were fixed after a previous failure, allow an explicit re-sync.
+    if (forceSync === true) {
+      wallet.syncStatus = 'PENDING';
+      await wallet.save();
+      await startHistoricalSync(wallet);
       wallet = await Wallet.findOne({ address, chain });
     }
 

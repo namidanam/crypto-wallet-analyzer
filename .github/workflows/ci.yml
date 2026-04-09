@@ -5,7 +5,7 @@ on:
     branches: [main, dev]
   pull_request:
     branches: [main, dev]
-
+  workflow_dispatch:
 jobs:
 
   # ────────────────────────────────────────────────
@@ -91,7 +91,7 @@ jobs:
 
   # ────────────────────────────────────────────────
   # JOB 3: Docker Compose — integration health check
-  # Spins up all 4 containers and checks /health endpoints
+  # Spins up backend + python containers and checks /health endpoints
   # ────────────────────────────────────────────────
   docker-integration:
     name: Docker — Container Health Check
@@ -105,25 +105,16 @@ jobs:
       - name: Create .env file for compose
         run: |
           cat <<EOF > .env
+          MONGO_URI=${{ secrets.MONGO_URI || 'mongodb://example.invalid:27017/wallet-sync' }}
+          DB_NAME=wallet-sync
+          PYTHON_SERVER_URL=http://python-server:8000
           GOLDRUSH_API_KEY=${{ secrets.GOLDRUSH_API_KEY || 'ci-placeholder' }}
           TATUM_API_KEY=${{ secrets.TATUM_API_KEY || 'ci-placeholder' }}
           JWT_SECRET=${{ secrets.JWT_SECRET || 'ci-test-secret-do-not-use' }}
           EOF
 
       - name: Build and start containers
-        run: docker compose up -d --build
-
-      - name: Wait for MongoDB to be healthy
-        run: |
-          echo "Waiting for MongoDB..."
-          for i in $(seq 1 20); do
-            if docker compose exec -T mongodb mongosh --quiet --eval "db.runCommand('ping').ok" 2>/dev/null | grep -q 1; then
-              echo "MongoDB is ready."
-              break
-            fi
-            echo "  attempt $i/20 — retrying in 5s"
-            sleep 5
-          done
+        run: docker compose up -d --build python-server backend
 
       - name: Wait for Python server /health
         run: |
@@ -141,7 +132,7 @@ jobs:
         run: |
           echo "Waiting for Node.js server..."
           for i in $(seq 1 20); do
-            if curl -sf http://localhost:5000/health > /dev/null 2>&1; then
+            if curl -sf http://localhost:4000/health > /dev/null 2>&1; then
               echo "Node.js server is ready."
               break
             fi
@@ -157,7 +148,7 @@ jobs:
 
       - name: Assert Node.js /health returns 200
         run: |
-          STATUS=$(curl -o /dev/null -sw "%{http_code}" http://localhost:5000/health)
+          STATUS=$(curl -o /dev/null -sw "%{http_code}" http://localhost:4000/health)
           echo "Status: $STATUS"
           [ "$STATUS" = "200" ]
 

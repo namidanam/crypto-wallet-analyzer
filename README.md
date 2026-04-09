@@ -318,6 +318,7 @@ TATUM_API_KEY=your_tatum_key
 - [Architecture Overview](./docs/ARCHITECTURE.md)
 - [API Reference](./docs/API.md)
 - [Setup Guide](./docs/SETUP.md)
+- [Docker Runbook](./docs/DOCKER_README.md)
 - [Contribution Guidelines](./docs/CONTRIBUTION.md)
 
 ---
