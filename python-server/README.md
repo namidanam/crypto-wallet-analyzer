@@ -19,8 +19,8 @@ python-server/
 │   ├── db/
 │   │   └── mongo.py         # MongoDB connection
 │   ├── processors/
-│   │   ├── normalize.py     # Transaction normalization (ANMOL)
-│   │   ├── aggregates.py    # Statistical computations (ANHAD)
+│   │   ├── normalize.py     # Transaction normalization (VIJNA)
+│   │   ├── aggregates.py    # Statistical computations (ANMOL)
 │   │   └── risk_engine.py   # Risk scoring (ANHAD)
 │   ├── schemas/
 │   │   ├── transaction.py   # Pydantic models
@@ -67,6 +67,25 @@ isort app/
 mypy app/
 ```
 
+## Effort Estimation (Intermediate COCOMO)
+
+Project-level Intermediate COCOMO estimation (excluding `node_modules/`, generated artifacts, documentation, and config/lock files) is documented in `docs/ESTIMATION.md`.
+
+
+## Running the Python Server
+
+Start the server:
+```bash
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+Server will be available at `http://localhost:8000`
+
+**Access via Browser:**
+- Health Check: `http://localhost:8000/health`
+- Interactive API Docs (Swagger UI): `http://localhost:8000/docs` — allows testing endpoints without curl.
+
+
 ## API Endpoints
 
 ### Health Check
@@ -75,18 +94,65 @@ GET /health
 Response: { "status": "healthy", "service": "python-normalizer" }
 ```
 
+This endpoint verifies that the Python processing server is running correctly.
+
+**Access via:**
+- Browser: `http://localhost:8000/health`
+- curl:
+```bash
+curl http://localhost:8000/health
+```
+
+---
+
 ### Normalize Transactions
+
 ```
-POST /normalize
-Body: {
-  "transactions": [...],
-  "chain": "ethereum"
-}
-Response: {
-  "normalized": [...],
-  "count": 10
+POST /normalize/{wallet}
+```
+
+Fetches raw transaction data for a given wallet from MongoDB, normalizes it into a unified schema, validates it, and stores the normalized data back into MongoDB.
+
+**Flow:**
+```
+Node Server → stores raw data in MongoDB
+        ↓
+Python API (/normalize/{wallet})
+        ↓
+Fetch raw transactions from DB
+        ↓
+Normalize + validate
+        ↓
+Store in normalized_transactions collection
+```
+
+**Response:**
+```json
+{
+  "wallet": "0x123...",
+  "normalized_count": 42
 }
 ```
+
+**Example Usage:**
+
+Linux (curl):
+```bash
+curl -X POST http://localhost:8000/normalize/0x1234567890123456789012345678901234567890 
+(or)
+curl -X POST http://localhost:8000/normalize/{wallet_address}
+
+```
+
+Windows (PowerShell):
+```powershell
+Invoke-RestMethod -Method POST `
+  -Uri "http://localhost:8000/normalize/0x1234567890123456789012345678901234567890"
+```
+
+> **Note:** The Python server does not return normalized data to Node. It acts as a processing service that updates the database directly. Communication between Node and Python happens via MongoDB.
+
+---
 
 ### Compute Aggregates
 ```
@@ -102,6 +168,9 @@ Response: {
 }
 ```
 
+
+---
+
 ### Calculate Risk Score
 ```
 POST /risk-score
@@ -113,6 +182,24 @@ Response: {
   "risk_level": "medium",
   "factors": {...}
 }
+```
+
+---
+
+## Example Workflow
+
+1. Run the Node server and ensure raw transactions are stored in MongoDB.
+2. Start the Python server:
+```bash
+   uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+3. Trigger normalization:
+```bash
+   curl -X POST http://localhost:8000/normalize/
+```
+4. Check MongoDB — normalized data will appear in:
+```
+   wallet-sync → normalized_transactions
 ```
 
 ## Testing
@@ -196,3 +283,14 @@ normalized = normalizer.normalize_ethereum_tx(eth_tx)
 - Normalization: 1000+ tx/minute
 - Aggregates: <500ms for 500 transactions
 - Risk scoring: <200ms per wallet
+
+
+## Development Workspace
+
+A `.code-workspace` file is included for seamless development:
+- Automatically selects the correct interpreter:
+  - Python → virtual environment (`venv`)
+  - Node.js → JavaScript runtime
+- Ensures consistent environment across team members
+
+**Usage:** Open the `.code-workspace` file in VS Code instead of opening folders individually.

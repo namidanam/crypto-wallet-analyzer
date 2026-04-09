@@ -54,7 +54,7 @@ services:
   # ==========================================
   backend:
     build:
-      context: ./backend
+      context: ./node-server
       dockerfile: Dockerfile
     container_name: crypto-wallet-backend
     restart: always

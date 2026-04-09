@@ -55,7 +55,6 @@ def compute_aggregates(history: WalletHistory) -> WalletAggregates:
         avg_time_between_tx = 0.0
 
     # ── Counterparty concentration ──────────────────────────────────
-    # Find the single address with which this wallet exchanged the most volume
     counterparty_volumes: dict[str, float] = {}
     for _, row in df.iterrows():
         if row["from_address"].lower() == wallet:
@@ -79,7 +78,6 @@ def compute_aggregates(history: WalletHistory) -> WalletAggregates:
         avg_tx_value=float(avg_val),
         active_days=active_days,
         risk_factors=[],
-        # New features
         max_tx_value=max_tx_value,
         min_tx_value=min_tx_value,
         std_tx_value=std_tx_value,

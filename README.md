@@ -251,6 +251,18 @@ pytest
 
 ---
 
+## 📐 Effort Estimation (Intermediate COCOMO)
+
+To estimate effort using **Intermediate COCOMO'81** while excluding `node_modules/`, generated artifacts, documentation, and configuration/lock files, see `docs/ESTIMATION.md`.
+
+Quick run (uses only tracked production code by default):
+
+```bash
+python3 scripts/cocomo_intermediate.py
+```
+
+---
+
 ## 🔧 Configuration
 
 ### API Keys Required
@@ -283,7 +295,7 @@ TATUM_API_KEY=your_tatum_key
 - [x] Project structure and Docker setup
 - [x] Backend API gateway with GoldRush integration
 - [x] MongoDB schema design
-- [ ] Tatum API backup integration
+- [X] Tatum API backup integration
 - [ ] Python normalization engine
 - [ ] Basic frontend UI
 

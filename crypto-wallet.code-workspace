@@ -1,0 +1,10 @@
+{
+    "folders": [
+        { "path": "python-server" },
+        { "path": "node-server" },
+        { "path": "frontend" },
+        { "path": "blockchain_server-main" },
+        { "path": "docs" }
+    ],
+    "settings": {}
+}
