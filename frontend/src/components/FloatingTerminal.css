@@ -1,0 +1,125 @@
+/* macOS-inspired Floating Terminal */
+.floating-terminal {
+  width: 320px;
+  background: rgba(10, 13, 20, 0.85);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+}
+
+.terminal-header {
+  height: 32px;
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  display: flex;
+  align-items: center;
+  padding: 0 1rem;
+  user-select: none;
+}
+
+.mac-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.mac-btn {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+.mac-btn.close { background-color: #FF5A5A; }
+.mac-btn.minimize { background-color: #FBA311; }
+.mac-btn.maximize { background-color: #1CC48F; }
+
+.terminal-title {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--on-surface-variant);
+  font-family: var(--font-body);
+  letter-spacing: 0.02em;
+}
+
+.terminal-body {
+  flex: 1;
+  padding: 1rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  scroll-behavior: smooth;
+}
+
+/* Custom scrollbar for terminal */
+.terminal-body::-webkit-scrollbar {
+  width: 4px;
+}
+.terminal-body::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+
+.terminal-history {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.terminal-line {
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: #c9d1d9; /* light grey for general output */
+  word-wrap: break-word;
+}
+
+.terminal-line.command {
+  color: var(--primary);
+  font-weight: 500;
+}
+
+.terminal-line.error {
+  color: var(--error);
+}
+
+.terminal-line.success {
+  color: var(--success);
+}
+
+.terminal-line.prompt {
+  color: #c8a0ff; /* soft purple for sudo prompts */
+  font-style: italic;
+}
+
+.terminal-input-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.terminal-prompt {
+  color: var(--success);
+  font-weight: bold;
+  font-size: 0.875rem;
+}
+
+.terminal-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--on-surface);
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  caret-color: var(--primary);
+}
+
+.terminal-input::placeholder {
+  color: rgba(255, 255, 255, 0.2);
+}

@@ -30,6 +30,7 @@
   /* -- Typography -- */
   --font-display: 'Space Grotesk', sans-serif;
   --font-body: 'Inter', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
   
   /* -- Elevations -- */
   --shadow-ambient: 0 8px 32px rgba(0, 0, 0, 0.4);
@@ -136,19 +137,6 @@ body {
   display: flex;
   min-height: 100vh;
   background-color: var(--surface);
-}
-
-.vault-sidebar {
-  width: 280px;
-  background: rgba(17, 21, 29, 0.8);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  border-right: 1px solid var(--outline);
-  display: flex;
-  flex-direction: column;
-  padding: 2rem 1.5rem;
-  flex-shrink: 0;
-  z-index: 10;
 }
 
 .vault-content {
