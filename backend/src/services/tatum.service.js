@@ -45,13 +45,49 @@ function utxoTimestampMs(tx) {
 }
 
 function mapTatumUtxoTx(tx, address) {
+  // UTXO txns from Tatum have inputs/outputs arrays rather than a top-level amount.
+  // Compute the wallet-relevant value by summing outputs addressed to `address`.
+  let computedValue = null;
+  const outputs = tx.outputs || tx.vout || [];
+  const inputs = tx.inputs || tx.vin || [];
+
+  if (outputs.length) {
+    let received = 0;
+    for (const o of outputs) {
+      const addrs = o.addresses || (o.address ? [o.address] : []);
+      if (addrs.includes(address)) {
+        received += Number(o.value || 0) || 0;
+      }
+    }
+    computedValue = received;
+  }
+
+  // Determine from/to from inputs/outputs when available
+  let from = tx.from || tx.sender || address;
+  let to = tx.to || tx.recipient || address;
+  if (inputs.length) {
+    const firstInputAddrs = inputs[0]?.addresses || (inputs[0]?.address ? [inputs[0].address] : []);
+    if (firstInputAddrs.length) from = firstInputAddrs[0];
+  }
+  if (outputs.length) {
+    for (const o of outputs) {
+      const addrs = o.addresses || (o.address ? [o.address] : []);
+      if (addrs.length && !addrs.includes(address)) {
+        to = addrs[0];
+        break;
+      }
+    }
+  }
+
+  const finalValue = computedValue != null ? String(computedValue) : String(tx.amount ?? tx.value ?? '0');
+
   return {
     txHash: tx.txid || tx.txId || tx.hash || tx.id,
     blockNumber: Number.isFinite(Number(tx.blockNumber)) ? Number(tx.blockNumber) : 0,
     timestamp: utxoTimestampMs(tx),
-    from: tx.from || tx.sender || address,
-    to: tx.to || tx.recipient || address,
-    value: String(tx.amount ?? tx.value ?? '0'),
+    from,
+    to,
+    value: finalValue,
     assetType: 'NATIVE',
     provider: 'tatum'
   };
@@ -226,7 +262,14 @@ async function fetchDogeLiteTxs(address, chain, pageToken, mappedChain) {
   if (apiKey) {
     try {
       await rateLimit();
-      return await fetchTatumUtxoInternal(address, mappedChain, 0, 'u');
+      const result = await fetchTatumUtxoInternal(address, mappedChain, 0, 'u');
+      // If Tatum returned data, use it; otherwise fall through to BlockCypher
+      if (result.transactions.length > 0) {
+        return result;
+      }
+      logInfo(
+        `[tatum.service] Tatum returned 0 txs for ${chain}; trying BlockCypher fallback`
+      );
     } catch (err) {
       if (!shouldFallbackFromTatum(err)) {
         throw wrapTatumError(address, chain, err);
@@ -317,7 +360,13 @@ async function fetchBitcoinTxs(address, chain, pageToken) {
   if (apiKey) {
     try {
       await rateLimit();
-      return await fetchTatumUtxoInternal(address, 'bitcoin', 0, 't');
+      const result = await fetchTatumUtxoInternal(address, 'bitcoin', 0, 't');
+      if (result.transactions.length > 0) {
+        return result;
+      }
+      logInfo(
+        `[tatum.service] Tatum returned 0 txs for Bitcoin; trying Blockstream fallback`
+      );
     } catch (err) {
       if (!shouldFallbackFromTatum(err)) {
         throw wrapTatumError(address, chain, err);

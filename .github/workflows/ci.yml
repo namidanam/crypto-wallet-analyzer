@@ -120,7 +120,7 @@ jobs:
         run: |
           echo "Waiting for Python server..."
           for i in $(seq 1 20); do
-            if curl -sf http://localhost:8000/health > /dev/null 2>&1; then
+            if curl -sf http://localhost:8001/health > /dev/null 2>&1; then
               echo "Python server is ready."
               break
             fi
@@ -132,7 +132,7 @@ jobs:
         run: |
           echo "Waiting for Node.js server..."
           for i in $(seq 1 20); do
-            if curl -sf http://localhost:5000/health > /dev/null 2>&1; then
+            if curl -sf http://localhost:5001/health > /dev/null 2>&1; then
               echo "Node.js server is ready."
               break
             fi
@@ -142,13 +142,13 @@ jobs:
 
       - name: Assert Python /health returns healthy
         run: |
-          RESPONSE=$(curl -sf http://localhost:8000/health)
+          RESPONSE=$(curl -sf http://localhost:8001/health)
           echo "Response: $RESPONSE"
           echo "$RESPONSE" | grep -q '"healthy"'
 
       - name: Assert Node.js /health returns 200
         run: |
-          STATUS=$(curl -o /dev/null -sw "%{http_code}" http://localhost:5000/health)
+          STATUS=$(curl -o /dev/null -sw "%{http_code}" http://localhost:5001/health)
           echo "Status: $STATUS"
           [ "$STATUS" = "200" ]
 

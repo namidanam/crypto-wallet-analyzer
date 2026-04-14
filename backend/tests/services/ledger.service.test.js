@@ -39,7 +39,8 @@ const { startHistoricalSync } = await import('../../src/services/ledger.service.
 describe('Ledger Service', () => {
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    jest.resetAllMocks();
+    mockRetry.mockImplementation(fn => fn());
   });
 
   // -----------------------------------
