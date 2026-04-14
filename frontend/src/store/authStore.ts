@@ -1,42 +1,54 @@
 import { create } from 'zustand';
 
-// Default demo credentials
-export const DEMO_CREDENTIALS = {
-  username: 'vault',
-  password: 'vault1234',
-};
+export interface GoogleUser {
+  googleId: string;
+  email: string;
+  name: string;
+  picture: string;
+}
 
 interface AuthState {
   isAuthenticated: boolean;
-  vaultPassword: string | null;
-  login: (username: string, password: string) => boolean;
+  user: GoogleUser | null;
+  token: string | null;
+  loginWithGoogle: (token: string, user: GoogleUser) => void;
   logout: () => void;
-  checkPassword: (password: string) => boolean;
+  restoreSession: () => boolean;
 }
 
-export const useAuthStore = create<AuthState>((set, get) => ({
+const TOKEN_KEY = 'vault_auth_token';
+const USER_KEY = 'vault_auth_user';
+
+export const useAuthStore = create<AuthState>((set) => ({
   isAuthenticated: false,
-  vaultPassword: null,
+  user: null,
+  token: null,
 
-  login: (username: string, password: string) => {
-    // Accept demo credentials OR any custom credentials (4+ char password)
-    const isDemoUser =
-      username === DEMO_CREDENTIALS.username &&
-      password === DEMO_CREDENTIALS.password;
-    const isCustomUser = username.trim().length > 0 && password.length >= 4;
-
-    if (isDemoUser || isCustomUser) {
-      set({ isAuthenticated: true, vaultPassword: password });
-      return true;
-    }
-    return false;
+  loginWithGoogle: (token: string, user: GoogleUser) => {
+    localStorage.setItem(TOKEN_KEY, token);
+    localStorage.setItem(USER_KEY, JSON.stringify(user));
+    set({ isAuthenticated: true, token, user });
   },
 
   logout: () => {
-    set({ isAuthenticated: false, vaultPassword: null });
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
+    set({ isAuthenticated: false, token: null, user: null });
   },
 
-  checkPassword: (password: string) => {
-    return get().vaultPassword === password;
+  restoreSession: () => {
+    const token = localStorage.getItem(TOKEN_KEY);
+    const userJson = localStorage.getItem(USER_KEY);
+    if (token && userJson) {
+      try {
+        const user = JSON.parse(userJson) as GoogleUser;
+        set({ isAuthenticated: true, token, user });
+        return true;
+      } catch {
+        localStorage.removeItem(TOKEN_KEY);
+        localStorage.removeItem(USER_KEY);
+      }
+    }
+    return false;
   },
 }));

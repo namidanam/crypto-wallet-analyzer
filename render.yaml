@@ -1,0 +1,71 @@
+# Render Blueprint — deploys all 3 services in the correct order.
+# Usage: Dashboard → New → Blueprint → Connect repo → Render reads this file.
+
+services:
+  # ──────────────────────────────────────────
+  # 1. Python Risk Engine (FastAPI)
+  # ──────────────────────────────────────────
+  - type: web
+    name: crypto-wallet-python
+    runtime: docker
+    dockerfilePath: ./python-server/Dockerfile
+    dockerContext: ./python-server
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: MONGO_URI
+        sync: false                  # prompted at deploy time
+      - key: DB_NAME
+        value: wallet-sync
+
+  # ──────────────────────────────────────────
+  # 2. Node.js Backend API (Express)
+  # ──────────────────────────────────────────
+  - type: web
+    name: crypto-wallet-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: "5000"
+      - key: MONGO_URI
+        sync: false
+      - key: DB_NAME
+        value: wallet-sync
+      - key: PYTHON_SERVER_URL
+        fromService:
+          type: web
+          name: crypto-wallet-python
+          property: hostport        # resolves to https://crypto-wallet-python.onrender.com
+      - key: GOLDRUSH_API_KEY
+        sync: false
+      - key: TATUM_API_KEY
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true         # Render auto-generates a random secret
+
+  # ──────────────────────────────────────────
+  # 3. React Frontend (Static Site)
+  # ──────────────────────────────────────────
+  - type: web
+    name: crypto-wallet-frontend
+    runtime: static
+    buildCommand: cd frontend && npm install && npm run build
+    staticPublishPath: ./frontend/dist
+    headers:
+      - path: /*
+        name: Cache-Control
+        value: public, max-age=0, must-revalidate
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_URL
+        fromService:
+          type: web
+          name: crypto-wallet-backend
+          property: hostport

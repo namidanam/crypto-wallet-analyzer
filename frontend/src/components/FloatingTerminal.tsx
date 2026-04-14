@@ -9,7 +9,7 @@ type HistoryItem = {
   text: string;
 };
 
-type TerminalMode = 'normal' | 'awaiting-password';
+
 
 const PAGES: Record<string, string> = {
   'dashboard': '/dashboard',
@@ -28,12 +28,10 @@ export default function FloatingTerminal() {
     { id: 2, type: 'output', text: "Usage: cd <page>" },
   ]);
   const [input, setInput] = useState('');
-  const [mode, setMode] = useState<TerminalMode>('normal');
-  const [pendingTarget, setPendingTarget] = useState<string | null>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
-  const { checkPassword, logout } = useAuthStore();
+  const logout = useAuthStore((s) => s.logout);
 
   // Scroll to bottom on new history
   useEffect(() => {
@@ -54,24 +52,6 @@ export default function FloatingTerminal() {
     const cmd = input.trim();
     if (!cmd) return;
 
-    // ── PASSWORD MODE ─────────────────────────────────────────
-    if (mode === 'awaiting-password') {
-      setInput('');
-      if (checkPassword(cmd)) {
-        setHistory((prev) => {
-          const lines = addLine(prev, 'success', 'Authentication successful. Navigating...');
-          return lines;
-        });
-        setMode('normal');
-        if (pendingTarget) navigate(pendingTarget);
-        setPendingTarget(null);
-      } else {
-        setHistory((prev) => addLine(prev, 'error', 'sudo: Authentication failed.'));
-        setMode('normal');
-        setPendingTarget(null);
-      }
-      return;
-    }
 
     // ── NORMAL MODE ───────────────────────────────────────────
     setHistory((prev) => addLine(prev, 'command', `root@vault:~ $ ${cmd}`));
@@ -108,11 +88,10 @@ export default function FloatingTerminal() {
         } else {
           const target = args[1].toLowerCase();
           if (PAGES[target]) {
-            setPendingTarget(PAGES[target]);
-            setMode('awaiting-password');
             setHistory((prev) =>
-              addLine(prev, 'prompt', `[sudo] password for vault (navigating to ${target}):`)
+              addLine(prev, 'success', `Navigating to ${target}...`)
             );
+            setTimeout(() => navigate(PAGES[target]), 400);
           } else {
             setHistory((prev) =>
               addLine(prev, 'error', `cd: no such file or directory: ${target}`)
@@ -128,7 +107,7 @@ export default function FloatingTerminal() {
     }
   };
 
-  const isPasswordMode = mode === 'awaiting-password';
+
 
   return (
     <div className="floating-terminal">
@@ -156,12 +135,10 @@ export default function FloatingTerminal() {
 
         {/* Input row */}
         <div className="terminal-input-row">
-          <span className="terminal-prompt">
-            {isPasswordMode ? 'Password:' : 'root@vault:~ $'}
-          </span>
+          <span className="terminal-prompt">root@vault:~ $</span>
           <input
             ref={inputRef}
-            type={isPasswordMode ? 'password' : 'text'}
+            type="text"
             className="terminal-input"
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -169,7 +146,7 @@ export default function FloatingTerminal() {
             autoFocus
             spellCheck={false}
             autoComplete="off"
-            placeholder={isPasswordMode ? '' : 'type a command...'}
+            placeholder="type a command..."
           />
         </div>
       </div>

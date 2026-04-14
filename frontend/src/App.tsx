@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import FloatingTerminal from './components/FloatingTerminal';
 import WalletsComparison from './pages/WalletsComparison';
@@ -21,7 +21,13 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 function AppLayout() {
   const location = useLocation();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const restoreSession = useAuthStore((s) => s.restoreSession);
   const showTerminal = isAuthenticated && location.pathname !== '/login';
+
+  // Restore session from localStorage on mount
+  useEffect(() => {
+    restoreSession();
+  }, [restoreSession]);
 
   return (
     <div className="vault-app-container">
