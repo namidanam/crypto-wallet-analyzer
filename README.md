@@ -97,9 +97,9 @@ The Frontend provides an institutional-grade UX for forensic monitoring.
 
 ---
 
-## 4. Persitence Layer and Forensic Data Schema
+## 4. Persistence Layer and Forensic Data Schema
 
-Persistence is managed via MongoDB, utilizing optimized indexing for forensic-speed recovery.
+Persistence is managed via MongoDB Atlas (cloud). Set `MONGO_URI` in `.env` with your Atlas connection string. See the [Docker Runbook](./docs/DOCKER_README.md) for details.
 
 ### 4.1. Entity Schema Definitions
 
@@ -204,6 +204,16 @@ The system utilizes multi-container orchestration to ensure service isolation an
    ```bash
    docker compose up -d --build
    ```
+
+4. **Verify Services**:
+   ```bash
+   docker compose ps
+   curl http://localhost:5000/health    # Backend
+   curl http://localhost:8000/health    # Python server
+   # Frontend: http://localhost:3000
+   ```
+
+   For the complete Docker workflow (rebuilds, troubleshooting, MongoDB management), see the [Docker Runbook](./docs/DOCKER_README.md).
 
 ### 6.2. Native Binary Execution Procedure
 1. **Persistence Layer**: Ensure MongoDB 7.1+ is operational on `localhost:27017`.

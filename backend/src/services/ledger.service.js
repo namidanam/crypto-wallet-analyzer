@@ -43,6 +43,45 @@ async function insertEntries(entries) {
   return { inserted: upserted, duplicates: valid.length - upserted };
 }
 
+function buildLedgerEntriesFromFetchedTxs(wallet, txs, sourceFallback) {
+  return txs.map(tx => ({
+    ...(() => {
+      const valueRaw = String(tx?.value ?? '0');
+      const tokenDecimals = Number.isFinite(Number(tx?.tokenDecimals)) ? Number(tx.tokenDecimals) : null;
+      const isPrimaryErc20 = tx?.assetType === 'ERC20' && tokenDecimals !== null;
+      const amountRaw = isPrimaryErc20 ? valueRaw : undefined;
+      const amount = isPrimaryErc20 ? formatUnits(valueRaw, tokenDecimals) : valueRaw;
+
+      const tokenTransfers = Array.isArray(tx?.tokenTransfers)
+        ? tx.tokenTransfers.map(t => {
+          const raw = String(t?.amount ?? '0');
+          const dec = Number.isFinite(Number(t?.tokenDecimals)) ? Number(t.tokenDecimals) : null;
+          return {
+            ...t,
+            amountRaw: raw,
+            amount: dec !== null ? formatUnits(raw, dec) : raw
+          };
+        })
+        : undefined;
+
+      return { amount, amountRaw, tokenTransfers };
+    })(),
+    wallet: wallet.address,
+    chain: wallet.chain,
+    txHash: tx.txHash ? String(tx.txHash) : '',
+    blockNumber: Number.isFinite(Number(tx.blockNumber)) ? Number(tx.blockNumber) : 0,
+    timestamp: Number.isFinite(Number(tx.timestamp)) ? Number(tx.timestamp) : Date.now(),
+    from: tx.from,
+    to: tx.to,
+    nativeValue: tx.nativeValue,
+    tokenAddress: tx.tokenAddress,
+    tokenSymbol: tx.tokenSymbol,
+    tokenDecimals: tx.tokenDecimals,
+    assetType: tx.assetType || 'NATIVE',
+    source: tx.provider || sourceFallback
+  }));
+}
+
 async function startHistoricalSync(wallet) {
 
   logInfo(`Starting historical sync for ${wallet.address}`);
@@ -59,11 +98,12 @@ async function startHistoricalSync(wallet) {
     let totalDuplicates = 0;
     let hadFetchError = false;
 
-    // Use Goldrush for EVM chains
+    // Use Goldrush for EVM chains (Tatum ledger API as fallback if no data yet)
     if (EVM_CHAINS.includes(wallet.chain)) {
       logInfo(`Fetching from Goldrush (Covalent) for EVM chain: ${wallet.chain}`);
       let cursor = null;
       let hasMore = true;
+      let tryEvmTatumFallback = false;
 
       while (hasMore) {
         try {
@@ -85,43 +125,7 @@ async function startHistoricalSync(wallet) {
 
           totalFetched += txs.length;
 
-          const entries = txs
-            .map(tx => ({
-              ...(() => {
-                const valueRaw = String(tx?.value ?? '0');
-                const tokenDecimals = Number.isFinite(Number(tx?.tokenDecimals)) ? Number(tx.tokenDecimals) : null;
-                const isPrimaryErc20 = tx?.assetType === 'ERC20' && tokenDecimals !== null;
-                const amountRaw = isPrimaryErc20 ? valueRaw : undefined;
-                const amount = isPrimaryErc20 ? formatUnits(valueRaw, tokenDecimals) : valueRaw;
-
-                const tokenTransfers = Array.isArray(tx?.tokenTransfers)
-                  ? tx.tokenTransfers.map(t => {
-                    const raw = String(t?.amount ?? '0');
-                    const dec = Number.isFinite(Number(t?.tokenDecimals)) ? Number(t.tokenDecimals) : null;
-                    return {
-                      ...t,
-                      amountRaw: raw,
-                      amount: dec !== null ? formatUnits(raw, dec) : raw
-                    };
-                  })
-                  : undefined;
-
-                return { amount, amountRaw, tokenTransfers };
-              })(),
-              wallet: wallet.address,
-              chain: wallet.chain,
-              txHash: tx.txHash ? String(tx.txHash) : '',
-              blockNumber: Number.isFinite(Number(tx.blockNumber)) ? Number(tx.blockNumber) : 0,
-              timestamp: Number.isFinite(Number(tx.timestamp)) ? Number(tx.timestamp) : Date.now(),
-              from: tx.from,
-              to: tx.to,
-              nativeValue: tx.nativeValue,
-              tokenAddress: tx.tokenAddress,
-              tokenSymbol: tx.tokenSymbol,
-              tokenDecimals: tx.tokenDecimals,
-              assetType: tx.assetType || 'NATIVE',
-              source: 'goldrush'
-            }));
+          const entries = buildLedgerEntriesFromFetchedTxs(wallet, txs, 'goldrush');
 
           const { inserted, duplicates } = await insertEntries(entries);
           totalInserted += inserted;
@@ -131,8 +135,52 @@ async function startHistoricalSync(wallet) {
           hasMore = !!nextCursor;
         } catch (err) {
           logError(`Error fetching transactions from Goldrush: ${err.message}`);
-          hadFetchError = true;
+          if (totalFetched === 0 && process.env.TATUM_API_KEY) {
+            tryEvmTatumFallback = true;
+          } else {
+            hadFetchError = true;
+          }
           hasMore = false;
+        }
+      }
+
+      if (tryEvmTatumFallback) {
+        logInfo(`Goldrush unavailable or returned no data; using Tatum for EVM chain ${wallet.chain}`);
+        let pageToken = null;
+        let evmMore = true;
+        while (evmMore) {
+          try {
+            pageCount++;
+            if (pageCount > MAX_PAGES) {
+              logInfo(`Reached max pages (${MAX_PAGES}). Stopping early.`);
+              break;
+            }
+            const { transactions: txs, nextPageToken } =
+              await retryWithBackoff(() =>
+                fetchTatumTxs(wallet.address, wallet.chain, pageToken)
+              );
+
+            logInfo(
+              `Fetched transactions: ${txs.length} for ${wallet.address} (Tatum EVM)`
+            );
+
+            if (!txs.length) break;
+
+            totalFetched += txs.length;
+
+            const entries = buildLedgerEntriesFromFetchedTxs(wallet, txs, 'tatum');
+
+            const { inserted, duplicates } = await insertEntries(entries);
+            totalInserted += inserted;
+            totalDuplicates += duplicates;
+
+            pageToken = nextPageToken;
+            evmMore = nextPageToken != null;
+          } catch (err) {
+            logError(`Error fetching from Tatum (EVM fallback): ${err.message}`);
+            hadFetchError = true;
+            evmMore = false;
+          }
         }
       }
 
@@ -140,7 +188,7 @@ async function startHistoricalSync(wallet) {
     // Use Tatum for non-EVM chains
     else if (NON_EVM_CHAINS.includes(wallet.chain)) {
       logInfo(`Fetching from Tatum for non-EVM chain: ${wallet.chain}`);
-      let offset = 0;
+      let pageToken = null;
       let hasMore = true;
 
       while (hasMore) {
@@ -150,9 +198,9 @@ async function startHistoricalSync(wallet) {
             logInfo(`Reached max pages (${MAX_PAGES}). Stopping early.`);
             break;
           }
-          const { transactions: txs, nextOffset } =
+          const { transactions: txs, nextPageToken } =
             await retryWithBackoff(() =>
-              fetchTatumTxs(wallet.address, wallet.chain, offset)
+              fetchTatumTxs(wallet.address, wallet.chain, pageToken)
             );
 
           logInfo(
@@ -163,50 +211,14 @@ async function startHistoricalSync(wallet) {
 
           totalFetched += txs.length;
 
-          const entries = txs
-            .map(tx => ({
-              ...(() => {
-                const valueRaw = String(tx?.value ?? '0');
-                const tokenDecimals = Number.isFinite(Number(tx?.tokenDecimals)) ? Number(tx.tokenDecimals) : null;
-                const isPrimaryErc20 = tx?.assetType === 'ERC20' && tokenDecimals !== null;
-                const amountRaw = isPrimaryErc20 ? valueRaw : undefined;
-                const amount = isPrimaryErc20 ? formatUnits(valueRaw, tokenDecimals) : valueRaw;
-
-                const tokenTransfers = Array.isArray(tx?.tokenTransfers)
-                  ? tx.tokenTransfers.map(t => {
-                    const raw = String(t?.amount ?? '0');
-                    const dec = Number.isFinite(Number(t?.tokenDecimals)) ? Number(t.tokenDecimals) : null;
-                    return {
-                      ...t,
-                      amountRaw: raw,
-                      amount: dec !== null ? formatUnits(raw, dec) : raw
-                    };
-                  })
-                  : undefined;
-
-                return { amount, amountRaw, tokenTransfers };
-              })(),
-              wallet: wallet.address,
-              chain: wallet.chain,
-              txHash: tx.txHash ? String(tx.txHash) : '',
-              blockNumber: Number.isFinite(Number(tx.blockNumber)) ? Number(tx.blockNumber) : 0,
-              timestamp: Number.isFinite(Number(tx.timestamp)) ? Number(tx.timestamp) : Date.now(),
-              from: tx.from,
-              to: tx.to,
-              nativeValue: tx.nativeValue,
-              tokenAddress: tx.tokenAddress,
-              tokenSymbol: tx.tokenSymbol,
-              tokenDecimals: tx.tokenDecimals,
-              assetType: tx.assetType || 'NATIVE',
-              source: 'tatum'
-            }));
+          const entries = buildLedgerEntriesFromFetchedTxs(wallet, txs, 'tatum');
 
           const { inserted, duplicates } = await insertEntries(entries);
           totalInserted += inserted;
           totalDuplicates += duplicates;
 
-          offset = nextOffset;
-          hasMore = txs.length === 50; // Continue if we got a full page
+          pageToken = nextPageToken;
+          hasMore = nextPageToken != null;
         } catch (err) {
           logError(`Error fetching transactions from Tatum: ${err.message}`);
           hadFetchError = true;

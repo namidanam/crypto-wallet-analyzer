@@ -5,8 +5,19 @@ import GlowButton from '../components/GlowButton';
 import './WalletsComparison.css';
 
 export default function WalletsComparison() {
+  const SUPPORTED_CHAINS = [
+    { id: 'eth-mainnet', name: 'Ethereum', icon: 'Ξ' },
+    { id: 'matic-mainnet', name: 'Polygon', icon: '⬡' },
+    { id: 'bsc-mainnet', name: 'BNB Chain', icon: '◆' },
+    { id: 'btc-mainnet', name: 'Bitcoin', icon: '₿' },
+    { id: 'doge-mainnet', name: 'Dogecoin', icon: 'Ð' },
+    { id: 'ltc-mainnet', name: 'Litecoin', icon: 'Ł' },
+  ];
+
   const [addr1, setAddr1] = useState('');
   const [addr2, setAddr2] = useState('');
+  const [chain1, setChain1] = useState('eth-mainnet');
+  const [chain2, setChain2] = useState('eth-mainnet');
   const [res1, setRes1] = useState<RiskAnalysisResult | null>(null);
   const [res2, setRes2] = useState<RiskAnalysisResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -21,8 +32,8 @@ export default function WalletsComparison() {
     setError('');
     try {
       const [r1, r2] = await Promise.all([
-        walletService.analyzeWalletRisk({ address: addr1, chain: 'eth-mainnet' }),
-        walletService.analyzeWalletRisk({ address: addr2, chain: 'eth-mainnet' })
+        walletService.analyzeWalletRisk({ address: addr1, chain: chain1 }),
+        walletService.analyzeWalletRisk({ address: addr2, chain: chain2 })
       ]);
       setRes1(r1);
       setRes2(r2);
@@ -100,21 +111,71 @@ export default function WalletsComparison() {
             <label className="label-sm" style={{ display: 'block', marginBottom: '8px' }}>Primary Address</label>
             <input 
               className="vault-input" 
-              placeholder="0x..." 
+              placeholder="0x... or base58 address" 
               value={addr1} 
               onChange={(e) => setAddr1(e.target.value)} 
-              style={{ width: '100%' }}
+              style={{ width: '100%', marginBottom: '0.5rem' }}
             />
+            <select
+              value={chain1}
+              onChange={(e) => setChain1(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '0.5rem 1rem',
+                background: 'var(--surface-container-highest)',
+                color: 'var(--on-surface)',
+                border: '1px solid var(--outline)',
+                borderRadius: 'var(--radius-md)',
+                fontFamily: 'var(--font-body)',
+                fontSize: '0.875rem',
+                cursor: 'pointer',
+                appearance: 'none',
+                WebkitAppearance: 'none',
+                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%239CA3AF' d='M2 4l4 4 4-4'/%3E%3C/svg%3E")`,
+                backgroundRepeat: 'no-repeat',
+                backgroundPosition: 'right 0.75rem center',
+                paddingRight: '2rem',
+              }}
+            >
+              {SUPPORTED_CHAINS.map(c => (
+                <option key={c.id} value={c.id}>{c.icon} {c.name}</option>
+              ))}
+            </select>
           </div>
           <div style={{ flex: 1, minWidth: '300px' }}>
             <label className="label-sm" style={{ display: 'block', marginBottom: '8px' }}>Counterparty Address</label>
             <input 
               className="vault-input" 
-              placeholder="0x..." 
+              placeholder="0x... or base58 address" 
               value={addr2} 
               onChange={(e) => setAddr2(e.target.value)} 
-              style={{ width: '100%' }}
+              style={{ width: '100%', marginBottom: '0.5rem' }}
             />
+            <select
+              value={chain2}
+              onChange={(e) => setChain2(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '0.5rem 1rem',
+                background: 'var(--surface-container-highest)',
+                color: 'var(--on-surface)',
+                border: '1px solid var(--outline)',
+                borderRadius: 'var(--radius-md)',
+                fontFamily: 'var(--font-body)',
+                fontSize: '0.875rem',
+                cursor: 'pointer',
+                appearance: 'none',
+                WebkitAppearance: 'none',
+                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%239CA3AF' d='M2 4l4 4 4-4'/%3E%3C/svg%3E")`,
+                backgroundRepeat: 'no-repeat',
+                backgroundPosition: 'right 0.75rem center',
+                paddingRight: '2rem',
+              }}
+            >
+              {SUPPORTED_CHAINS.map(c => (
+                <option key={c.id} value={c.id}>{c.icon} {c.name}</option>
+              ))}
+            </select>
           </div>
           <GlowButton variant="primary" onClick={handleBenchmark} disabled={loading}>
             {loading ? 'Analyzing...' : 'Execute Benchmark'}

@@ -1,24 +1,5 @@
 services:
   # ==========================================
-  # MongoDB Database
-  # ==========================================
-  mongodb:
-    image: mongo:7.0
-    container_name: crypto-wallet-db
-    restart: always
-    ports:
-      - "27017:27017"
-    volumes:
-      - mongodb_data:/data/db
-    networks:
-      - crypto-network
-    healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-
-  # ==========================================
   # Python Processing Server
   # ==========================================
   python-server:
@@ -28,14 +9,13 @@ services:
     container_name: crypto-wallet-python
     restart: always
     ports:
-      - "8000:8000"
+      - "8001:8000"
     environment:
-      - MONGO_URI=${MONGO_URI:-mongodb://mongodb:27017/wallet-sync}
+      - MONGO_URI=${MONGO_URI:?Set MONGO_URI in .env (MongoDB Atlas connection string)}
       - DB_NAME=${DB_NAME:-wallet-sync}
       - LOG_LEVEL=info
-    depends_on:
-      mongodb:
-        condition: service_healthy
+    volumes:
+      - ./python-server/app:/app/app
     networks:
       - crypto-network
     healthcheck:
@@ -54,19 +34,19 @@ services:
     container_name: crypto-wallet-backend
     restart: always
     ports:
-      - "5000:5000"
+      - "5001:5000"
     environment:
       - NODE_ENV=production
       - PORT=5000
-      - MONGO_URI=${MONGO_URI:-mongodb://mongodb:27017/wallet-sync}
+      - MONGO_URI=${MONGO_URI:?Set MONGO_URI in .env (MongoDB Atlas connection string)}
       - DB_NAME=${DB_NAME:-wallet-sync}
       - PYTHON_SERVER_URL=http://python-server:8000
       - GOLDRUSH_API_KEY=${GOLDRUSH_API_KEY:-}
       - TATUM_API_KEY=${TATUM_API_KEY:-}
       - JWT_SECRET=${JWT_SECRET:-dev-secret-change-me}
+    volumes:
+      - ./backend/src:/app/src
     depends_on:
-      mongodb:
-        condition: service_healthy
       python-server:
         condition: service_healthy
     networks:
@@ -87,9 +67,9 @@ services:
     container_name: crypto-wallet-frontend
     restart: always
     ports:
-      - "3000:3000"
+      - "3001:3000"
     environment:
-      - VITE_API_URL=http://localhost:5000
+      - VITE_API_URL=http://localhost:5001
     depends_on:
       backend:
         condition: service_healthy
@@ -97,11 +77,8 @@ services:
       - crypto-network
 
 # ==========================================
-# Networks & Volumes
+# Networks
 # ==========================================
 networks:
   crypto-network:
     driver: bridge
-
-volumes:
-  mongodb_data:
