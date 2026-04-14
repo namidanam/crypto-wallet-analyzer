@@ -14,6 +14,10 @@ RUN npm install
 # Copy source code
 COPY . .
 
+# Accept VITE_API_URL at build time so Vite bakes it into the bundle
+ARG VITE_API_URL
+ENV VITE_API_URL=$VITE_API_URL
+
 # Build application
 RUN npm run build
 

@@ -40,7 +40,7 @@ const LedgerEntrySchema = new Schema({
 
   source: {
     type: String,
-    enum: ['goldrush', 'tatum', 'covalent', 'manual'],
+    enum: ['goldrush', 'tatum', 'covalent', 'manual', 'blockstream', 'blockcypher'],
     required: true
   }
 }, { strict: true });

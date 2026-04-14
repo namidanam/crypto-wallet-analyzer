@@ -44,13 +44,28 @@ async function insertEntries(entries) {
 }
 
 function buildLedgerEntriesFromFetchedTxs(wallet, txs, sourceFallback) {
+  const isEvmChain = EVM_CHAINS.includes(wallet.chain);
+
   return txs.map(tx => ({
     ...(() => {
       const valueRaw = String(tx?.value ?? '0');
       const tokenDecimals = Number.isFinite(Number(tx?.tokenDecimals)) ? Number(tx.tokenDecimals) : null;
       const isPrimaryErc20 = tx?.assetType === 'ERC20' && tokenDecimals !== null;
-      const amountRaw = isPrimaryErc20 ? valueRaw : undefined;
-      const amount = isPrimaryErc20 ? formatUnits(valueRaw, tokenDecimals) : valueRaw;
+      const isNativeEvm = tx?.assetType === 'NATIVE' && isEvmChain;
+
+      let amount, amountRaw;
+      if (isPrimaryErc20) {
+        amountRaw = valueRaw;
+        amount = formatUnits(valueRaw, tokenDecimals);
+      } else if (isNativeEvm) {
+        // ETH, MATIC, BNB all have 18 decimals — convert from wei
+        amountRaw = valueRaw;
+        amount = formatUnits(valueRaw, 18);
+      } else {
+        // UTXO chains (BTC/DOGE/LTC) — value is already in satoshis
+        amountRaw = undefined;
+        amount = valueRaw;
+      }
 
       const tokenTransfers = Array.isArray(tx?.tokenTransfers)
         ? tx.tokenTransfers.map(t => {

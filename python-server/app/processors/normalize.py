@@ -251,11 +251,13 @@ def _normalize_utxo(tx, wallet_address: str, token_symbol: str, chain_name: str)
 
     # Edge case: Tatum already remapped to a flat shape (no vin/vout)
     # tatum.service.js maps tx → { txHash, from, to, value, timestamp }
-    # Fall back to that if vin/vout are both empty.
+    # In MongoDB the field is "amount" (set by buildLedgerEntriesFromFetchedTxs)
     if not normalized:
         from_addr = tx.get("from") or wallet_address
         to_addr   = tx.get("to")   or wallet_address
-        value_sat = float(tx.get("value", 0) or 0)
+        # Node.js stores the value as "amount" in MongoDB; fall back to "value"
+        raw_amount = tx.get("amount") or tx.get("value") or 0
+        value_sat = float(raw_amount or 0)
         direction = "OUT" if from_addr == wallet_address else "IN"
 
         normalized.append({

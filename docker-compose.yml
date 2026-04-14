@@ -64,12 +64,12 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        VITE_API_URL: http://localhost:5001
     container_name: crypto-wallet-frontend
     restart: always
     ports:
       - "3001:3000"
-    environment:
-      - VITE_API_URL=http://localhost:5001
     depends_on:
       backend:
         condition: service_healthy
