@@ -2,10 +2,10 @@ import React from 'react';
 
 export default function AboutFounders() {
   const founders = [
-    { name: 'Raghav Maheshwari', role: 'Architect', email: 'b24cs1107@iitj.ac.in', details: 'System Architecture, Auth, API Gateway, Routing' },
-    { name: 'Anmol Mishra', role: 'Integrator', email: 'b24cs1009@iitj.ac.in', details: 'External APIs, Data Retrieval, Normalization Engine' },
-    { name: 'Anhad Singh', role: 'Analyst', email: 'b24cs1007@iitj.ac.in', details: 'Risk Algorithms, Scoring Logic, Analytics' },
-    { name: 'Vijna Maradithaya', role: 'Guardian', email: 'b24cs1109@iitj.ac.in', details: 'QA, Optimization, Caching, Deployment' },
+    { name: 'Raghav Maheshwari', role: 'Architect', email: 'b24cs1107@iitj.ac.in', details: 'System Architecture, API Gateway, Routing' },
+    { name: 'Anmol Mishra', role: 'Integrator', email: 'b24cs1009@iitj.ac.in', details: 'External APIs, Data Retrieval, Aggregation Engine' },
+    { name: 'Anhad Singh', role: 'Analyst', email: 'b24cs1007@iitj.ac.in', details: 'Risk Algorithms using ML, Scoring Logic, Analytics' },
+    { name: 'Vijna Maradithaya', role: 'Guardian', email: 'b24cs1109@iitj.ac.in', details: 'QA, Optimization, Normalization, Deployment' },
   ];
 
   return (
