@@ -1,37 +1,45 @@
-import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuthStore, DEMO_CREDENTIALS } from '../store/authStore';
+import { GoogleLogin, CredentialResponse } from '@react-oauth/google';
+import { useAuthStore } from '../store/authStore';
+import axios from 'axios';
+import { useState } from 'react';
 import './Login.css';
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+
 export default function Login() {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const login = useAuthStore((s) => s.login);
+  const [loading, setLoading] = useState(false);
+  const loginWithGoogle = useAuthStore((s) => s.loginWithGoogle);
   const navigate = useNavigate();
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!username.trim()) {
-      setError('Username cannot be empty.');
+  const handleGoogleSuccess = async (credentialResponse: CredentialResponse) => {
+    if (!credentialResponse.credential) {
+      setError('Google sign-in failed. No credential returned.');
       return;
     }
-    if (password.length < 4) {
-      setError('Password must be at least 4 characters.');
-      return;
-    }
-    const success = login(username, password);
-    if (success) {
+
+    setLoading(true);
+    setError('');
+
+    try {
+      // Verify the Google token with our backend
+      const { data } = await axios.post(`${API_URL}/api/auth/google`, {
+        credential: credentialResponse.credential,
+      });
+
+      loginWithGoogle(data.token, data.user);
       navigate('/dashboard');
-    } else {
-      setError('Authentication failed. Invalid credentials.');
+    } catch (err: any) {
+      const msg = err.response?.data?.message || 'Authentication failed. Please try again.';
+      setError(msg);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const fillDemo = () => {
-    setUsername(DEMO_CREDENTIALS.username);
-    setPassword(DEMO_CREDENTIALS.password);
-    setError('');
+  const handleGoogleError = () => {
+    setError('Google sign-in was cancelled or failed. Please try again.');
   };
 
   return (
@@ -53,49 +61,28 @@ export default function Login() {
         </div>
         <div className="login-subtitle">root@vault:~ $ sudo vault --authenticate</div>
 
-        {/* Demo hint */}
-        <button className="login-demo-btn" type="button" onClick={fillDemo} id="vault-demo-fill-btn">
-          Use demo credentials
-        </button>
+        {/* Google Sign-In */}
+        <div className="login-google-section">
+          <p className="login-google-label">Sign in with your Google account to continue</p>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit}>
-          <div className="login-field">
-            <label className="login-label" htmlFor="vault-username">Username</label>
-            <input
-              id="vault-username"
-              type="text"
-              className="login-input"
-              placeholder="e.g. vault"
-              value={username}
-              onChange={(e) => { setUsername(e.target.value); setError(''); }}
-              autoComplete="off"
-              spellCheck={false}
+          <div className="login-google-btn-wrapper" id="vault-google-login">
+            <GoogleLogin
+              onSuccess={handleGoogleSuccess}
+              onError={handleGoogleError}
+              theme="filled_black"
+              size="large"
+              width="380"
+              text="signin_with"
+              shape="rectangular"
             />
           </div>
+        </div>
 
-          <div className="login-field">
-            <label className="login-label" htmlFor="vault-password">Vault Password</label>
-            <input
-              id="vault-password"
-              type="password"
-              className="login-input"
-              placeholder="Enter vault master key"
-              value={password}
-              onChange={(e) => { setPassword(e.target.value); setError(''); }}
-              autoComplete="new-password"
-            />
-          </div>
-
-          {error && <div className="login-error">⚠ {error}</div>}
-
-          <button type="submit" className="login-btn" id="vault-login-btn">
-            ⟶ &nbsp; Authenticate &amp; Enter
-          </button>
-        </form>
+        {loading && <div className="login-loading">🔄 Verifying credentials...</div>}
+        {error && <div className="login-error">⚠ {error}</div>}
 
         <div className="login-footer">
-          VAULT v1.0.0 — ENCRYPTED SESSION — UNAUTHORIZED ACCESS PROHIBITED
+          VAULT v1.0.0 — GOOGLE OAUTH 2.0 — UNAUTHORIZED ACCESS PROHIBITED
         </div>
       </div>
     </div>

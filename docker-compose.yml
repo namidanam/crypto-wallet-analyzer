@@ -44,6 +44,7 @@ services:
       - GOLDRUSH_API_KEY=${GOLDRUSH_API_KEY:-}
       - TATUM_API_KEY=${TATUM_API_KEY:-}
       - JWT_SECRET=${JWT_SECRET:-dev-secret-change-me}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
     volumes:
       - ./backend/src:/app/src
     depends_on:
@@ -66,6 +67,7 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_API_URL: http://localhost:5001
+        VITE_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
     container_name: crypto-wallet-frontend
     restart: always
     ports:
