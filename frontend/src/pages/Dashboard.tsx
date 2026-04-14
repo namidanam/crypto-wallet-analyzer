@@ -65,7 +65,7 @@ export default function Dashboard() {
           <input
             type="text"
             className="vault-card"
-            style={{ padding: '0.5rem 1rem', flex: 1, maxWidth: '400px' }}
+            style={{ padding: '0.5rem 1rem', flex: 1, maxWidth: '400px', color: 'white' }}
             placeholder="Wallet address (0x... or base58)"
             value={address}
             onChange={(e) => setAddress(e.target.value)}
