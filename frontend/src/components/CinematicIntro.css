@@ -1,0 +1,118 @@
+/* ============================================
+   CINEMATIC INTRO — 3D ENTRY EXPERIENCE
+   ============================================ */
+
+.cinematic-intro {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: #050a0e;
+  transition: opacity 1s cubic-bezier(0.4, 0, 0.2, 1);
+  opacity: 1;
+}
+
+.cinematic-intro.cinematic-fade-out {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Canvas fills the screen */
+.cinematic-intro canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* ─── Scanline overlay for cinematic/crime feel ─── */
+.cinematic-scanlines {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 255, 163, 0.015) 2px,
+    rgba(0, 255, 163, 0.015) 4px
+  );
+  z-index: 2;
+}
+
+/* ─── CRYPTO VAULT title overlay ─── */
+.cinematic-title-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 3;
+  pointer-events: none;
+  animation: titleFadeIn 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.cinematic-title {
+  display: flex;
+  gap: 1.2rem;
+  font-family: 'Inter', 'SF Pro Display', -apple-system, sans-serif;
+  font-size: clamp(2.5rem, 7vw, 5rem);
+  font-weight: 900;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  line-height: 1;
+  filter: drop-shadow(0 0 40px rgba(0, 255, 163, 0.4));
+}
+
+.cinematic-title-crypto {
+  color: #e0e0e0;
+  text-shadow:
+    0 0 20px rgba(255, 255, 255, 0.3),
+    0 0 60px rgba(255, 255, 255, 0.1);
+}
+
+.cinematic-title-vault {
+  color: #00ffa3;
+  text-shadow:
+    0 0 20px rgba(0, 255, 163, 0.5),
+    0 0 60px rgba(0, 255, 163, 0.3),
+    0 0 120px rgba(0, 255, 163, 0.15);
+}
+
+.cinematic-tagline {
+  margin-top: 1.2rem;
+  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+  font-size: clamp(0.65rem, 1.5vw, 0.9rem);
+  letter-spacing: 0.35em;
+  color: rgba(0, 255, 163, 0.5);
+  text-transform: uppercase;
+  animation: taglineFadeIn 1s 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* ─── Animations ─── */
+@keyframes titleFadeIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.7);
+    filter: blur(20px);
+  }
+  50% {
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0) drop-shadow(0 0 40px rgba(0, 255, 163, 0.4));
+  }
+}
+
+@keyframes taglineFadeIn {
+  0% {
+    opacity: 0;
+    transform: translateY(10px);
+    letter-spacing: 0.6em;
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    letter-spacing: 0.35em;
+  }
+}
