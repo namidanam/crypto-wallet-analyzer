@@ -30,7 +30,7 @@
 
 .login-panel {
   width: 100%;
-  max-width: 440px;
+  max-width: 540px;
   background: rgba(17, 21, 29, 0.72);
   backdrop-filter: blur(32px);
   -webkit-backdrop-filter: blur(32px);

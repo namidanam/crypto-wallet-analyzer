@@ -1,6 +1,7 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import FloatingTerminal from './components/FloatingTerminal';
+import CinematicIntro from './components/CinematicIntro';
 import WalletsComparison from './pages/WalletsComparison';
 import SystemDiagnostics from './pages/SystemDiagnostics';
 import Dashboard from './pages/Dashboard';
@@ -54,9 +55,21 @@ function AppLayout() {
 }
 
 export default function App() {
+  const [introFinished, setIntroFinished] = useState(false);
+
+  const handleIntroFinished = useCallback(() => {
+    setIntroFinished(true);
+  }, []);
+
   return (
-    <Router>
-      <AppLayout />
-    </Router>
+    <>
+      {/* Cinematic 3D intro — plays once then unmounts */}
+      {!introFinished && <CinematicIntro onFinished={handleIntroFinished} />}
+
+      {/* Existing UI — always rendered but hidden behind intro overlay */}
+      <Router>
+        <AppLayout />
+      </Router>
+    </>
   );
 }
