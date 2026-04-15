@@ -29,11 +29,12 @@ FROM nginx:alpine
 # Copy built assets from builder
 COPY --from=builder /app/dist /usr/share/nginx/html
 
-# Copy nginx config
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Copy nginx config template
+COPY nginx.conf /etc/nginx/templates/default.conf.template
 
-# Expose port
-EXPOSE 3000
+# Render sets PORT env var (default 10000)
+ENV PORT=10000
+EXPOSE 10000
 
-# Start nginx
-CMD ["nginx", "-g", "daemon off;"]
+# Use envsubst to inject PORT into nginx config, then start nginx
+CMD ["/bin/sh", "-c", "envsubst '${PORT}' < /etc/nginx/templates/default.conf.template > /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"]
