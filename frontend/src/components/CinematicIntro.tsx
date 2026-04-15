@@ -252,7 +252,7 @@ export default function CinematicIntro({ onFinished }: { onFinished: () => void 
 
   useEffect(() => {
     if (showTitle) {
-      const id = setTimeout(() => setFadeOut(true), 1500);
+      const id = setTimeout(() => setFadeOut(true), 5000);
       return () => clearTimeout(id);
     }
   }, [showTitle]);
